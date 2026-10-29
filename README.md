@@ -8,10 +8,10 @@ takes a planted exploit instead of the honest task.
 
 ## Proposal → code
 
-Each part of the proposal (`proposal_notes.md`) and where it lives. `src/metawalker/` is the library
+Each part of the proposal (`CS4180_project_proposal.md`) and where it lives. `src/metawalker/` is the library
 (`pip install -e .`); `experiments/` holds the scripts that produce every result in `results/`. "Written by" follows
-the proposal's LLM-assistance disclosure: Aniket wrote the base algorithms; Claude (Claude Code) wrote the
-experiment scripts, the shell scripts and the other supporting code.
+the proposal's LLM-assistance disclosure: Aniket wrote the base algorithms; the rest is supporting code (the
+experiment scripts and shell scripts).
 
 | Proposal | Code | Written by |
 |---|---|---|
@@ -21,23 +21,23 @@ experiment scripts, the shell scripts and the other supporting code.
 | Walker (Table 1) | `walker.py`; network layout, action sets, features in `src/metawalker/policy.py` | Aniket |
 | RL-controlled CMA-ES (Table 1) | `src/metawalker/cma.py` (`cmaes` with a policy) | Aniket |
 | rlbo (Table 1) | `src/metawalker/rlbo.py` | Aniket |
-| OpenAI-ES | update step: `src/metawalker/es.py`; training loops: `experiments/benchmark.py` (`train`), `experiments/rlbo_bench.py` | Aniket (update), Claude (loops) |
-| PPO and branching double DQN | `experiments/rlalgos.py` | Claude |
+| OpenAI-ES | update step: `src/metawalker/es.py`; training loops: `experiments/benchmark.py` (`train`), `experiments/rlbo_bench.py` | Aniket (update), supporting code (loops) |
+| PPO and branching double DQN | `experiments/rlalgos.py` | supporting code |
 | Baselines: CMA-ES, 1/5th-rule walkers | `cma.py` (`cmaes`), `walker.py` (`navigate` with no policy) | Aniket |
-| Baselines: Optuna GP / TPE, SMAC3, NGOpt, random search | `src/metawalker/baselines.py` | Claude |
-| MetaWalker-Bench: test functions and the flat honeypot-like family | `problems.py`; suites and reports in `experiments/benchmark.py` | Aniket (functions), Claude (suites) |
-| Real honeypot: JAX PPO gridworld, 169 genes, validity checks | `experiments/honeypot/env.py` | Claude |
-| Comparison 1: same number of tries | `experiments/benchmark.py` (`test`, `hp` suites), `experiments/compare_hpo.py`, `experiments/rlbo_bench.py` | Claude |
-| Comparison 2: same running time as GP | `experiments/timematched.py`, `experiments/rerun_gp.py` | Claude |
-| Comparison 3: budgets 300–10,000 | `experiments/benchmark.py` (`budgets` suite) | Claude |
-| Comparison 4: real honeypot, same PPO compute | `experiments/honeypot/search.py`, `results/honeypot/summarize.py` | Claude |
-| Comparison 5: ablations, what the policies learned | ablation variants in `experiments/benchmark.py` (`hpx_norecheck`, `hpx_nojump`); `experiments/analysis/` | Claude |
-| Risk: re-test the best on new seeds | `experiments/honeypot/search.py` (`remeasure`), `src/metawalker/certify.py` | Claude |
-| Risk: Wilson confidence intervals | `experiments/benchmark.py` (`wilson`) | Claude |
-| Risk: self-checks for bugs | `tests/` | Claude |
-| Cluster runs (CPU-only Explorer) | `cluster/*.sbatch` | Claude |
+| Baselines: Optuna GP / TPE, SMAC3, NGOpt, random search | `src/metawalker/baselines.py` | supporting code |
+| MetaWalker-Bench: test functions and the flat honeypot-like family | `problems.py`; suites and reports in `experiments/benchmark.py` | Aniket (functions), supporting code (suites) |
+| Real honeypot: JAX PPO gridworld, 169 genes, validity checks | `experiments/honeypot/env.py` | supporting code |
+| Comparison 1: same number of tries | `experiments/benchmark.py` (`test`, `hp` suites), `experiments/compare_hpo.py`, `experiments/rlbo_bench.py` | supporting code |
+| Comparison 2: same running time as GP | `experiments/timematched.py`, `experiments/rerun_gp.py` | supporting code |
+| Comparison 3: budgets 300–10,000 | `experiments/benchmark.py` (`budgets` suite) | supporting code |
+| Comparison 4: real honeypot, same PPO compute | `experiments/honeypot/search.py`, `results/honeypot/summarize.py` | supporting code |
+| Comparison 5: ablations, what the policies learned | ablation variants in `experiments/benchmark.py` (`hpx_norecheck`, `hpx_nojump`); `experiments/analysis/` | supporting code |
+| Risk: re-test the best on new seeds | `experiments/honeypot/search.py` (`remeasure`), `src/metawalker/certify.py` | supporting code |
+| Risk: Wilson confidence intervals | `experiments/benchmark.py` (`wilson`) | supporting code |
+| Risk: self-checks for bugs | `tests/` | supporting code |
+| Cluster runs (CPU-only Explorer) | `cluster/*.sbatch` | supporting code |
 
-**The rest** is not in the proposal. It is the package's user-facing API, all written by Claude: `api.py`
+**The rest** is not in the proposal. It is the package's user-facing API, all supporting code: `api.py`
 (`minimize`), `sklearn.py` (`MetaWalkerCV`), `asktell.py`, `space.py`, `compare.py`, `recommend.py`,
 `importance.py`, `train.py`, and `experiments/demo.py`.
 
