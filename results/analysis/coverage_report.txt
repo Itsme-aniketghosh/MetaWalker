@@ -1,0 +1,6 @@
+method                         marginal  start   key    term   goal   door   walls(both)  repeats
+random                          1.00   0.99   0.99   0.99   1.00   1.00    1.00        0.00
+CMA-ES                          1.00   0.86   0.87   0.87   0.99   1.00    1.00        0.00
+hpx_walker                      1.00   0.94   0.95   0.95   1.00   1.00    1.00        0.19
+hpx_walker + grid + LHS jumps   1.00   0.98   0.98   0.98   1.00   1.00    1.00        0.06
+marginal = share of 169 x 16 (coordinate, value-bin) cells sampled; repeats = share of evaluations whose decoded level was already tried

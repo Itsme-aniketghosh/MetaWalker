@@ -1,0 +1,31 @@
+10024 evaluations from 17 searches; valid 23.6%; exploit>0.5 among valid 75.5%
+
+== valid  (n=10024, mean 0.236)
+9 settings: held-out-search AUC 0.902 +- 0.025
+169 raw coords: held-out-search AUC 0.516 +- 0.040
+Shapley mean |phi| (and correlation of the setting with its phi: + means higher helps):
+  honest_len         0.1428   dir -0.74
+  terminal_dist      0.0812   dir +0.75
+  ent                0.0554   dir +0.78
+  lam                0.0224   dir +0.67
+  wall_frac          0.0200   dir -0.55
+  lr                 0.0189   dir -0.46
+  clip               0.0166   dir -0.41
+  gamma              0.0138   dir -0.18
+  terminal_visible   0.0000   dir +nan
+raw coords: 0 of 169 (0 = no single coordinate matters) carry 80% of the permutation importance; top 15: x0 0.000, x107 0.000, x108 0.000, x109 0.000, x110 0.000, x111 0.000, x112 0.000, x113 0.000, x114 0.000, x115 0.000, x116 0.000, x117 0.000, x118 0.000, x119 0.000, x120 0.000
+
+== exploit|valid  (n=2364, mean 0.698)
+9 settings: held-out-search R2 -0.164 +- 0.434
+169 raw coords: held-out-search R2 -0.163 +- 0.412
+Shapley mean |phi| (and correlation of the setting with its phi: + means higher helps):
+  wall_frac          0.0716   dir -0.93
+  honest_len         0.0486   dir +0.86
+  lam                0.0451   dir +0.76
+  ent                0.0334   dir +0.72
+  terminal_dist      0.0312   dir -0.89
+  lr                 0.0286   dir -0.77
+  gamma              0.0131   dir +0.03
+  clip               0.0127   dir -0.15
+  terminal_visible   0.0000   dir +nan
+raw coords: 38 of 169 (0 = no single coordinate matters) carry 80% of the permutation importance; top 15: x77 0.020, x99 0.016, x47 0.012, x28 0.012, x48 0.012, x9 0.011, x104 0.011, x152 0.010, x135 0.009, x81 0.009, x14 0.009, x25 0.009, x116 0.008, x54 0.008, x46 0.008

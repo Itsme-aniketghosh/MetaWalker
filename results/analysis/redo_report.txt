@@ -1,0 +1,38 @@
+policies: ['cov_hp_s0', 'cov_vb_s0', 'cov_vb_s1', 'cov_vb_s2', 'hpfam_walker_s0', 'hpx_base_s0', 'hpx_walker_s0', 'mom_vb_s0']
+== Part 0: seed robustness of hpx_walker (move / re-check / jump shares, x4+x8 share of moves)
+  block 0: move 0.40  re-check 0.12  jump 0.48  x4+x8 0.00
+  block 1: move 0.42  re-check 0.12  jump 0.46  x4+x8 0.00
+  block 2: move 0.37  re-check 0.10  jump 0.53  x4+x8 0.00
+== Part 1: hpx_walker behaviour (all blocks)
+  before any signal  (20467 steps): move 0.24 re-check 0.05 jump 0.70  x4+x8 0.01  pull 0.94
+  after signal       (22445 steps): move 0.54 re-check 0.16 jump 0.30  x4+x8 0.00  pull 0.91
+  budget 0.00-0.25: move 0.29 re-check 0.09 jump 0.62
+  budget 0.25-0.50: move 0.31 re-check 0.08 jump 0.61
+  budget 0.50-0.75: move 0.45 re-check 0.11 jump 0.44
+  budget 0.75-1.00: move 0.54 re-check 0.17 jump 0.29
+  ablations (same instances and rng; score = log10 regret, lower is better; win = better than full):
+    full               median -0.41  mean -0.43  found region 0.44  win vs full 0.50
+    no re-check        median +0.00  mean -0.13  found region 0.11  win vs full 0.24
+    no jump            median +0.00  mean -0.33  found region 0.33  win vs full 0.37
+    no long steps      median -0.33  mean -0.40  found region 0.43  win vs full 0.47
+    none of the three  median +0.00  mean -0.08  found region 0.06  win vs full 0.20
+    hpx_base (control) median -0.15  mean -0.23  found region 0.15  win vs full 0.34
+== Part 2: budget-aware walker cov_vb (seeds 0-2): head choices and improvement by budget quarter
+  sphere    n=100 B=  300: walker -0.34 vs CMA-ES -0.37 | Q1: logmult -0.08 pull 0.90 Q2: logmult -0.06 pull 0.86 Q3: logmult -0.08 pull 0.83 Q4: logmult -0.05 pull 0.86
+      share of improvement per quarter: walker [0.85 0.1  0.02 0.03]  CMA-ES [0.49 0.16 0.23 0.12]
+  sphere    n=100 B= 1000: walker -0.43 vs CMA-ES -0.67 | Q1: logmult -0.09 pull 0.86 Q2: logmult +0.05 pull 0.86 Q3: logmult -0.02 pull 0.83 Q4: logmult -0.04 pull 0.81
+      share of improvement per quarter: walker [0.77 0.12 0.07 0.04]  CMA-ES [0.56 0.24 0.12 0.08]
+  sphere    n=100 B=10000: walker -0.78 vs CMA-ES -1.50 | Q1: logmult -0.00 pull 0.84 Q2: logmult -0.03 pull 0.84 Q3: logmult -0.04 pull 0.84 Q4: logmult -0.03 pull 0.83
+      share of improvement per quarter: walker [0.74 0.16 0.06 0.04]  CMA-ES [0.81 0.16 0.03 0.  ]
+  rastrigin n=100 B=  300: walker -0.19 vs CMA-ES -0.17 | Q1: logmult -0.09 pull 0.87 Q2: logmult -0.10 pull 0.82 Q3: logmult -0.11 pull 0.85 Q4: logmult -0.09 pull 0.84
+      share of improvement per quarter: walker [0.84 0.09 0.04 0.03]  CMA-ES [0.46 0.24 0.21 0.08]
+  rastrigin n=100 B= 1000: walker -0.23 vs CMA-ES -0.25 | Q1: logmult -0.10 pull 0.86 Q2: logmult -0.02 pull 0.84 Q3: logmult -0.10 pull 0.83 Q4: logmult -0.08 pull 0.83
+      share of improvement per quarter: walker [0.84 0.08 0.04 0.04]  CMA-ES [0.64 0.28 0.02 0.07]
+  rastrigin n=100 B=10000: walker -0.32 vs CMA-ES -0.47 | Q1: logmult -0.11 pull 0.84 Q2: logmult -0.09 pull 0.85 Q3: logmult -0.09 pull 0.84 Q4: logmult -0.08 pull 0.83
+      share of improvement per quarter: walker [0.76 0.11 0.09 0.03]  CMA-ES [0.71 0.06 0.02 0.21]
+  honeypot  n=100 B=  300: walker -0.39 vs CMA-ES -0.19 | Q1: logmult -0.31 pull 0.78 Q2: logmult -0.33 pull 0.84 Q3: logmult -0.19 pull 0.81 Q4: logmult -0.15 pull 0.81
+      share of improvement per quarter: walker [0.05 0.23 0.16 0.23]  CMA-ES [0.12 0.33 0.31 0.  ]
+  honeypot  n=100 B= 1000: walker -1.48 vs CMA-ES -0.56 | Q1: logmult -0.32 pull 0.81 Q2: logmult -0.15 pull 0.83 Q3: logmult -0.10 pull 0.82 Q4: logmult -0.15 pull 0.81
+      share of improvement per quarter: walker [0.26 0.44 0.23 0.07]  CMA-ES [0.39 0.06 0.47 0.08]
+  honeypot  n=100 B=10000: walker -1.55 vs CMA-ES -0.89 | Q1: logmult -0.18 pull 0.83 Q2: logmult -0.15 pull 0.83 Q3: logmult -0.15 pull 0.82 Q4: logmult -0.13 pull 0.82
+      share of improvement per quarter: walker [0.89 0.04 0.07 0.  ]  CMA-ES [0.72 0.15 0.01 0.13]

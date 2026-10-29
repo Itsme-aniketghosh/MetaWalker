@@ -1,0 +1,175 @@
+import math
+
+import numpy as np
+import pytest
+
+from metawalker import Categorical, Float, Int, Space, minimize
+
+
+def sphere(params):
+    return sum((v - 0.3) ** 2 for v in params.values())
+
+
+SPACE5 = {f'x{i}': (0.0, 1.0) for i in range(5)}
+
+
+def test_space_roundtrip_and_types():
+    sp = Space({'lr': Float(1e-4, 1e-1, log=True), 'depth': (2, 12), 'kernel': ['rbf', 'linear'], 'c': (0.0, 2.0)})
+    p = sp.decode([0.5, 0.5, 0.9, 0.25])
+    assert isinstance(p['depth'], int) and 2 <= p['depth'] <= 12
+    assert p['kernel'] == 'linear' and abs(p['c'] - 0.5) < 1e-12
+    assert abs(p['lr'] - math.sqrt(1e-4 * 1e-1)) < 1e-12  # log midpoint
+    q = sp.decode(sp.encode(p))
+    assert q['kernel'] == p['kernel'] and q['depth'] == p['depth'] and abs(q['lr'] - p['lr']) < 1e-9
+    with pytest.raises(TypeError):
+        Space({'bad': 'not a spec'})
+
+
+@pytest.mark.parametrize('method', ['rlcma', 'walker', 'walker_hp', 'cmaes', 'random', 'auto', 'panel'])
+def test_every_method_spends_budget_and_improves(method):
+    r = minimize(sphere, SPACE5, budget=150, method=method, seed=0)
+    assert r.n_evals == 150 and len(r.history) == 150
+    first = r.history[0][1]
+    assert r.best_value <= first and r.best_value == min(v for _, v in r.history)
+    # easy 5-D sphere: every real optimizer gets close; random search only needs to beat a typical random point
+    assert r.best_value < (0.25 if method == 'random' else 0.05), (method, r.best_value)
+
+
+def test_seed_makes_runs_reproducible():
+    a = minimize(sphere, SPACE5, budget=60, method='walker', seed=3)
+    b = minimize(sphere, SPACE5, budget=60, method='walker', seed=3)
+    assert a.best_value == b.best_value and a.best_params == b.best_params
+
+
+def test_maximize_and_auto_choice():
+    r = minimize(lambda p: -sphere(p), SPACE5, budget=80, method='auto', maximize=True, seed=1)
+    assert r.method == 'cmaes' and r.best_value > -0.1  # 5 params -> CMA-ES
+    big = {f'x{i}': (0.0, 1.0) for i in range(30)}
+    assert minimize(sphere, big, budget=40, method='auto', seed=1).method == 'rlcma'
+
+
+def test_invalid_configurations_are_failed_trials_not_crashes():
+    def f(p):
+        if p['x0'] > 0.5:
+            raise ValueError('invalid config')
+        return sphere(p)
+    r = minimize(f, SPACE5, budget=100, method='walker', seed=0)
+    assert r.n_evals == 100 and r.n_failed > 0 and r.best_params['x0'] <= 0.5
+
+
+def test_recheck_reports_fresh_values():
+    rng = np.random.default_rng(0)
+    r = minimize(lambda p: sphere(p) + 0.01 * rng.standard_normal(), SPACE5, budget=60, method='cmaes',
+                 seed=0, recheck=4)
+    assert len(r.recheck_values) == 4
+
+
+def test_metawalkercv_is_a_drop_in_for_gridsearchcv():
+    sklearn = pytest.importorskip('sklearn')
+    from sklearn.datasets import load_iris
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import GridSearchCV
+    from metawalker.sklearn import MetaWalkerCV
+    X, y = load_iris(return_X_y=True)
+    grid = {'C': [0.01, 0.1, 1.0, 10.0], 'fit_intercept': [True, False]}  # a GridSearchCV param_grid, unchanged
+    gs = GridSearchCV(LogisticRegression(max_iter=500), grid, cv=3).fit(X, y)
+    ns = MetaWalkerCV(LogisticRegression(max_iter=500), grid, n_iter=12, method='walker', cv=3,
+                     random_state=0).fit(X, y)
+    assert len(ns.cv_results_['params']) == 12 and set(ns.best_params_) == {'C', 'fit_intercept'}
+    assert ns.best_score_ >= gs.best_score_ - 0.02 and hasattr(ns, 'best_estimator_')
+    ns2 = MetaWalkerCV(LogisticRegression(max_iter=500), {'C': Float(1e-3, 1e2, log=True)}, n_iter=10,
+                      method='cmaes', cv=3, random_state=0).fit(X, y)
+    assert 1e-3 <= ns2.best_params_['C'] <= 1e2
+
+
+def test_simulated_problems_have_known_optimum_and_plateau_is_flat():
+    from metawalker import FAMILIES, TestProblem
+    for fam in FAMILIES:
+        p = TestProblem(fam, 10, seed=1)
+        opt = {f'x{i}': float(v) for i, v in enumerate((p.shift + 5) / 10)}  # z = 0 there
+        assert abs(p.true(opt)) < 1e-6, fam
+        assert p.scale > 0
+    p = TestProblem('plateau', 20, seed=0)
+    xs = np.random.default_rng(0).uniform(0, 1, (400, 20))
+    live = np.mean([p.true({f'x{i}': v for i, v in enumerate(x)}) < 1 for x in xs])
+    assert 0.01 < live < 0.12  # ~95% of the space gives no signal
+
+
+def test_user_panel_and_unknown_method():
+    r = minimize(sphere, SPACE5, budget=90, method=['walker', 'cmaes', 'random'], seed=0)
+    assert r.n_evals == 90 and r.method.startswith('panel:')
+    with pytest.raises(ValueError):
+        minimize(sphere, SPACE5, budget=10, method=['walker', 'nonsense'])
+
+
+def test_compare_on_own_loss_and_simulated_problem():
+    from metawalker import compare, make_problem
+    res = compare({'my_loss': (sphere, SPACE5), 'sim': make_problem('rastrigin', 8, seed=2)},
+                  methods=['walker', 'cmaes', 'random'], budget=80, seeds=2)
+    assert len(res.rows) == 2 * 2 * 3
+    ranks = res.ranks()
+    assert set(ranks) == {'walker', 'cmaes', 'random'} and abs(sum(ranks.values()) - 6.0) < 1e-9  # ranks 1..3
+    assert ranks['random'] > min(ranks['walker'], ranks['cmaes'])
+    assert 0 <= res.win_rate('cmaes', 'random') <= 1 and 'win rate' in res.summary()
+
+
+def test_gp_and_auto_expensive():
+    pytest.importorskip('optuna'); pytest.importorskip('torch')  # Optuna's GPSampler needs torch
+    r = minimize(sphere, SPACE5, budget=25, method='gp', seed=0)
+    assert r.n_evals == 25 and r.best_value < sphere({k: 0.5 for k in SPACE5})
+    def flaky(p):  # failed trials must not break the GP model
+        return math.nan if p['x0'] > 0.8 else sphere(p)
+    assert minimize(flaky, SPACE5, budget=20, method='gp', seed=0).n_failed >= 0
+    assert minimize(sphere, SPACE5, budget=12, method='auto', expensive=True, seed=0).method == 'gp'
+
+
+def test_optimizer_seed_never_replays_a_test_problem_seed():
+    # regression: unsalted, minimize(seed=k)'s first random point reproduced make_problem(seed=k)'s optimum draws
+    from metawalker import make_problem
+    fn, sp = make_problem('sphere', 20, seed=0)
+    r = minimize(fn, sp, budget=4, method='random', seed=0)
+    first = np.array([r.history[0][0][f'x{i}'] for i in range(20)])
+    assert np.linalg.norm(first - (fn.shift + 5) / 10) > 1.0
+
+
+def test_cache_skips_repeated_configs():
+    import metawalker as ns
+    calls = []
+
+    def f(p):
+        calls.append(p)
+        return (p['a'] - 3) ** 2 + (p['b'] - 1) ** 2
+
+    space = {'a': ns.Int(0, 6), 'b': ns.Int(0, 3)}  # 28 configs: a search revisits them
+    r = ns.minimize(f, space, budget=20, method='walker', seed=0)
+    keys = [tuple(sorted(p.items())) for p in calls]
+    assert len(keys) == len(set(keys)) == r.n_evals == len(r.history)  # no config evaluated twice
+    r2 = ns.minimize(f, space, budget=20, method='walker', seed=0, cache=False)
+    assert r2.n_evals == 20
+
+
+def test_metawalkercv_accepts_legacy_randomstate():
+    pytest.importorskip('sklearn')
+    from sklearn.datasets import load_iris
+    from sklearn.linear_model import LogisticRegression
+    from metawalker.sklearn import MetaWalkerCV
+    X, y = load_iris(return_X_y=True)
+    for rs in (np.random.RandomState(0), np.random.default_rng(0)):  # regression: RandomState has no .integers
+        ns = MetaWalkerCV(LogisticRegression(max_iter=500), {'C': Float(1e-3, 1e2, log=True)}, n_iter=6,
+                         method='cmaes', cv=3, random_state=rs).fit(X, y)
+        assert len(ns.cv_results_['params']) == 6
+
+
+def test_walker_runs_on_a_bare_problem():
+    from metawalker.walker import navigate
+
+    class Bare:  # only the documented contract: n, budget, evals, __call__ (regression: walker read prob.best_y)
+        n, budget, evals = 4, 60, 0
+
+        def __call__(self, x):
+            self.evals += 1
+            return float(((x - 0.3) ** 2).sum())
+
+    p = Bare()
+    navigate(p, np.random.default_rng(0))
+    assert p.evals == 60

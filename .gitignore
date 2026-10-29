@@ -1,0 +1,25 @@
+# secrets and personal cluster access
+.env
+explorer-ssh.sh
+explorer-askpass.sh
+
+# environments, caches, logs
+.venv/
+__pycache__/
+*.pyc
+*.log
+*.egg-info/
+.pytest_cache/
+.claude/
+
+# local scratch, archived pre-refactor code, coursework notes
+scratch/
+_archive/
+proposal_notes.md
+
+# experiment outputs written into the working directory ($NAV_OUT)
+policy_*_s99.*
+results_*/
+runs/
+logs/
+results/demo_quick/
