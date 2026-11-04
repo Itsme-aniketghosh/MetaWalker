@@ -13,9 +13,9 @@
 
 *Epistemic status: course project. One toy environment, 5 to 15 searches per method. I trust the big gaps (rlbo vs. CMA-ES and BO), not the small ones.*
 
-## Building honeypots by hand doesn't scale
+## Honeypots are still built by hand, one at a time
 
-If you want to measure reward hacking or train it out of a model, you need environments where cheating is possible, pays as well as the honest solution, and is distinguishable from it. The coding-model version is "edit the tests instead of fixing the bug." People mostly build these by hand, one at a time. I wanted to know whether an optimizer could find them instead, and whether a *learned* optimizer would do it better than the standard ones.
+To measure reward hacking, or train it out of a model, you need an environment where cheating pays exactly as well as doing the job, and where you can tell afterward which one the model did. The coding-model version is "edit the tests instead of fixing the bug." People mostly build these by hand, one at a time. I wanted to know whether an optimizer could find them instead, and whether a *learned* optimizer would do it better than the standard ones.
 
 ## The test bed: a gridworld where cheating pays as well as solving
 
@@ -107,11 +107,11 @@ Fittingly, the learned optimizers kept finding shortcuts in my code.
 
 1. **Seed leak.** The policy's RNG was seeded the same way as the problem's, so the walker's "random" first point landed next to the optimum every time. ES exploited this immediately. Beautiful training curves, meaningless.
 2. **Tie-breaking in the ES update.** On flat problems most candidates tie, and ranking broke ties by list position, so ties pushed the policy in a fixed direction. Noise dressed up as a gradient.
-3. **Thread oversubscription.** Dozens of workers each spawned dozens of BLAS threads, and CMA-ES ran ~300× slower than it should.
+3. **Thread oversubscription.** Every worker started its own pool of BLAS threads, dozens of them, and they fought over the same cores. CMA-ES ran about 300× slower than it should have. In a wall-clock comparison, that's a free win for whichever method does less linear algebra.
 
-None crashed. All were caught only by checks written for that specific failure. If you train optimizers, assume the training signal is lying until you've shown otherwise.
+None of them crashed or printed a warning. I found each one only after writing a check aimed at that exact failure, which makes me wonder what I haven't written a check for yet.
 
-## The edge shrinks on flatter landscapes, and a warm-up helps
+## The flatter the landscape, the smaller the edge
 
 On the 95%-flat synthetic family, the learned walkers beat CMA-ES on 91% of problems from 20 dimensions up. At ~98.5% flat, that drops to 63%. Still ahead, but at that point every method often misses the pocket within 1,000 evaluations.
 
@@ -119,11 +119,11 @@ On the 95%-flat synthetic family, the learned walkers beat CMA-ES on 91% of prob
 
 *Share of problems (20 to 500 dims, 5 seeds, with and without noise) where a learned walker beat CMA-ES, pooled over three walkers. Black lines are 95% CIs.*
 
-Spending the first 20% of the budget on random samples helps a lot: on a 50-dimensional plateau, the warmed-up walker found the pocket in 13 of 20 runs, against 2 for CMA-ES and 0 for random search.
+The fix that helped most was also the least clever: spend the first 20% of the budget on random samples, then hand over to the walker. On a 50-dimensional plateau, the warmed-up walker found the pocket in 13 of 20 runs. CMA-ES found it in 2, random search in none.
 
-## No method wins everywhere, so the final product runs a panel
+## No method wins everywhere, so the package runs a panel
 
-rlbo ends with the strongest honeypots, the walker reaches a strong level fastest, CMA-ES wins at large budgets, and GP BO is hard to beat at 100 to 200 dimensions if you can afford its overhead. So if you don't know your landscape, run a panel: several optimizers, each with a share of the budget, keep the best. That's the default in the package, `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)), which also ships rlbo as `method="rlbo"`.
+rlbo ends with the strongest honeypots, and the walker gets to a strong one fastest. CMA-ES pulls ahead once the budget is large. GP BO is hard to beat at 100 to 200 dimensions, if you can wait for it. If you don't know which of these your problem looks like, hedge: split the budget across several optimizers and keep the best result. That's the default in the package, `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)), which also ships rlbo as `method="rlbo"`.
 
 A panel isn't free, though. Each method gets only part of the budget, and when the signal is rare that hurts. On a mix of flat and smooth test problems, the warmed-up walker alone reached the target on 11 of 15 runs, while a two-method panel with half the budget each reached it on 3. So the package's `compare()` runs candidate methods on your own losses, reports how often and how fast each one gets there, and suggests a panel, which is sometimes a single method with the whole budget. You can register your own optimizers alongside the built-in ones.
 
