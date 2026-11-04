@@ -1,5 +1,6 @@
 """minimize(): one entry point for every optimizer in the package."""
 import math
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import numpy as np
 from . import rlbo as _rlbo
 from .baselines import optuna_search, random_search
 from .cma import cmaes
-from .policy import POLICIES, load_policy
+from .policy import POLICIES, load_policy, nparam
 from .space import Space
 from .walker import WALKER_RULE, navigate
 
@@ -17,6 +18,7 @@ METHODS = ('auto', 'rlcma', 'walker', 'walker_hp', 'walker_hp_warm', 'walker_rul
 WALKERS = ('walker', 'walker_hp', 'walker_rule')
 CMAS = ('rlcma', 'cmaes', 'cmaes_rule')
 PANEL = ('rlcma', 'walker_hp', 'cmaes')
+CUSTOM = {}  # your own optimizers by method name: see register()
 AUTO_HIGH_DIM = 20   # benchmark: CMA-ES wins below ~20 dims, RL-controlled CMA-ES wins from ~50 up
 AUTO_GP_MAX_DIM = 200  # benchmark: Optuna GP is strongest at 50-200 dims when its ~1 h/run overhead is affordable
 
@@ -120,11 +122,51 @@ def _load_rlbo():
     return theta
 
 
+def register(name, optimizer):
+    """Add your own optimizer under a method name. After register('mine', opt), method='mine' works everywhere a
+    built-in name does: minimize(), panels such as ['mine', 'cmaes'], compare(), MetaWalkerCV and AskTell.
+
+    optimizer is either
+      - a walker you trained with train(): the TrainedPolicy, or the .npz path it was saved to; or
+      - any function optimizer(f, n, budget, rng) that calls f(x) on points x in the unit cube [0, 1]^n until
+        f.evals reaches budget. Lower is better, and calls past the budget return inf. Decoding into your space,
+        failed trials, caching, warmup and recheck are handled for you. For example, a 5-level grid search:
+
+            def grid(f, n, budget, rng):
+                for x in itertools.product(np.linspace(0, 1, 5), repeat=n):
+                    if f.evals >= budget:
+                        break
+                    f(np.array(x))
+
+    compare(n_jobs > 1) sends registered optimizers to its worker processes, so functions must be defined at the
+    top level of a module (picklable), like the objective itself.
+    """
+    from .train import TrainedPolicy  # train imports this module, so import here
+    if not isinstance(name, str) or name in METHODS:
+        raise ValueError(f'{name!r} must be a new name, not one of the built-in methods {METHODS}')
+    if isinstance(optimizer, (str, os.PathLike)):
+        optimizer = TrainedPolicy.load(optimizer)
+    if isinstance(optimizer, TrainedPolicy):
+        if optimizer.cfg.get('kind') != 'walker' or optimizer.theta.shape != (nparam(optimizer.cfg),):
+            raise ValueError('a registered policy must be a walker from train()')
+    elif not callable(optimizer):
+        raise TypeError('optimizer must be a TrainedPolicy, a path to one, or a function optimizer(f, n, budget, rng)')
+    CUSTOM[name] = optimizer
+
+
+def _set_custom(custom):
+    """compare(n_jobs > 1) worker initializer: the parent's registered optimizers."""
+    CUSTOM.update(custom)
+
+
 def _run(method, obj, rng, warmup=0.0):
     if method == 'walker_hp_warm':
         method, warmup = 'walker_hp', warmup or 0.2
-    if method not in METHODS[1:-1]:
-        raise ValueError(f'unknown method {method!r}; choose from {METHODS}')
+    custom = CUSTOM.get(method)
+    if method not in METHODS[1:-1] and custom is None:
+        raise ValueError(f'unknown method {method!r}; choose from {METHODS + tuple(CUSTOM)} (or register() your own)')
+    walker = method in WALKERS or hasattr(custom, 'theta')
+    M = custom.cfg['M'] if hasattr(custom, 'theta') else 4  # walkers per search; 4 for every shipped walker
     if not 0 <= warmup < 1:
         raise ValueError('warmup must be in [0, 1)')
     if obj.n == 1 and method in CMAS:
@@ -132,14 +174,19 @@ def _run(method, obj, rng, warmup=0.0):
     kw = {}
     if warmup > 0:
         k = max(1, round(warmup * obj.budget))
-        if method in WALKERS:
-            k = max(k, 4)  # every walker needs a start point; M = 4 for all shipped walkers
+        if walker:
+            k = max(k, M)  # every walker needs a start point
         X, F = _warmup(obj, rng, min(k, obj.budget))
-        if method in WALKERS and len(X) >= 4:
-            kw = dict(x0=X[:4], f0=F[:4])
+        if walker and len(X) >= M:
+            kw = dict(x0=X[:M], f0=F[:M])
         elif method in CMAS:
             kw = dict(x0=X[0])
-    if method in POLICIES:
+    if custom is not None:
+        if hasattr(custom, 'theta'):
+            navigate(obj, rng, custom.theta, custom.cfg, **kw)
+        else:
+            custom(obj, obj.n, obj.budget, rng)
+    elif method in POLICIES:
         theta, cfg = load_policy(method)
         (navigate if cfg['kind'] == 'walker' else cmaes)(obj, rng, theta, cfg, **kw)
     elif method == 'walker_rule':
@@ -164,6 +211,7 @@ def minimize(fn, space, budget=200, method='auto', maximize=False, seed=None, re
             'walker_rule' / 'cmaes_rule' (hand rules distilled from the learned walker / rlcma),
             'walker_hp_warm' (walker_hp with warmup=0.2: for rare-signal objectives),
             'rlbo' (learned acquisition over cheap surrogates; needs policies/rlbo_s0.npy),
+            or any name you added with register() (your own trained walker, grid search, ...),
             'gp' / 'tpe' (Optuna; needs metawalker[optuna]), 'random';
             'auto': CMA-ES below 20 parameters, RL-controlled CMA-ES from 20 up, or Optuna GP up to 200
                     parameters when expensive=True (each evaluation costs far more than GP's own overhead);
@@ -189,9 +237,9 @@ def minimize(fn, space, budget=200, method='auto', maximize=False, seed=None, re
             method = 'rlcma' if sp.n >= AUTO_HIGH_DIM else 'cmaes'
     panel = PANEL if method == 'panel' else method if isinstance(method, (list, tuple)) else None
     if panel is not None:
-        bad = [m for m in panel if m not in METHODS or m in ('auto', 'panel')]
+        bad = [m for m in panel if (m not in METHODS and m not in CUSTOM) or m in ('auto', 'panel')]
         if not panel or bad:
-            raise ValueError(f'panel methods must be from {METHODS[1:-1]}; got {list(panel)}')
+            raise ValueError(f'panel methods must be from {METHODS[1:-1] + tuple(CUSTOM)}; got {list(panel)}')
         # shortcut: equal split, no racing; upgrade to successive halving across methods if budgets get large
         results = []
         for i, m in enumerate(panel):

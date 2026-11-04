@@ -193,3 +193,113 @@ def test_rlbo_runs_on_a_mixed_space_within_budget(monkeypatch, tmp_path):
     r = minimize(f, space, budget=60, method='rlbo', seed=0)
     assert r.n_evals == 60 and len(r.history) == 60 and math.isfinite(r.best_value)
     assert r.best_value < 2  # better than the typical random point
+
+
+def grid5(f, n, budget, rng):
+    """A user-supplied optimizer: 5-level grid search over the unit cube."""
+    import itertools
+    for x in itertools.product(np.linspace(0, 1, 5), repeat=n):
+        if f.evals >= budget:
+            break
+        f(np.array(x))
+
+
+@pytest.fixture
+def no_custom(monkeypatch):
+    import metawalker.api as api
+    monkeypatch.setattr(api, 'CUSTOM', {})
+
+
+def test_register_a_function_optimizer_works_in_minimize_and_panels(no_custom):
+    from metawalker import register
+    register('grid', grid5)
+    f = lambda p: (p['a'] - 0.25) ** 2 + (p['b'] - 0.75) ** 2  # both optima sit on the 5-level grid
+    r = minimize(f, {'a': (0.0, 1.0), 'b': (0.0, 1.0)}, budget=25, method='grid')
+    assert r.n_evals == 25 and r.best_value == 0 and r.method == 'grid'
+    p = minimize(f, {'a': (0.0, 1.0), 'b': (0.0, 1.0)}, budget=50, method=['grid', 'cmaes'], seed=0)
+    assert p.n_evals <= 50 and p.best_value < 1e-3
+
+
+def test_register_a_trained_walker_by_path_with_warmup(no_custom, tmp_path):
+    from metawalker import register
+    from metawalker.policy import load_policy
+    from metawalker.train import TrainedPolicy
+    theta, cfg = load_policy('walker_hp')
+    TrainedPolicy(theta, cfg).save(tmp_path / 'mine.npz')
+    register('my_walker', tmp_path / 'mine.npz')
+    r = minimize(sphere, SPACE5, budget=120, method='my_walker', warmup=0.2, seed=1)
+    assert r.n_evals == 120 and r.best_value < 0.05
+    # the same policy under the built-in name gives the same search
+    assert r.best_value == minimize(sphere, SPACE5, budget=120, method='walker_hp', warmup=0.2, seed=1).best_value
+
+
+def test_registered_optimizers_reach_compare_worker_processes(no_custom):
+    from metawalker import compare, make_problem, register
+    from metawalker.policy import load_policy
+    from metawalker.train import TrainedPolicy
+    register('my_walker', TrainedPolicy(*load_policy('walker_hp')))
+    res = compare({'sphere': make_problem('sphere', 5)}, methods=['my_walker', 'random'], budget=60, seeds=2, n_jobs=2)
+    assert {r['method'] for r in res.rows} == {'my_walker', 'random'}
+
+
+def test_register_rejects_bad_names_and_objects(no_custom):
+    from metawalker import register
+    with pytest.raises(ValueError):
+        register('cmaes', grid5)
+    with pytest.raises(TypeError):
+        register('x', 42)
+    with pytest.raises(ValueError, match='register'):
+        minimize(sphere, SPACE5, budget=10, method='not_registered')
+
+
+def _small_comparison():
+    from metawalker import compare, make_problem
+    probs = {'sphere': make_problem('sphere', 8), 'plateau': make_problem('plateau', 8, noise=0.01)}
+    return compare(probs, methods=['cmaes', 'walker_hp', 'random'], budget=80, seeds=3)
+
+
+def test_compare_keeps_curves_and_times_for_every_run():
+    res = _small_comparison()
+    for r in res.rows:
+        c, t = r['curve'], r['times']
+        assert len(c) == len(t) == r['evals'] and c[-1] == r['score']
+        assert np.all(np.diff(t) >= 0) and t[-1] <= r['seconds']
+        if r['problem'] == 'sphere':  # noiseless: the true regret of the pick never gets worse
+            assert np.all(np.diff(c) <= 0)
+
+
+def test_success_counts_and_budget_slices_agree_with_the_runs():
+    res = _small_comparison()
+    tg = res.targets()
+    s = res.success()
+    for m in res.methods:
+        runs = [r for r in res.rows if r['method'] == m]
+        assert s[m]['hits'] == sum(r['score'] <= tg[r['problem']] for r in runs) and s[m]['runs'] == 6
+        assert s[m]['hits'] == 0 or 1 <= s[m]['evals'] <= 80
+    assert res.at_budget(80).ranks() == res.ranks()            # the full prefix is the run itself
+    small = res.at_budget(20)
+    assert all(r['evals'] <= 20 and r['score'] >= full['score'] for r, full in zip(small.rows, res.rows))
+    for text in (res.success_table(), res.budget_table(), res.summary()):
+        assert 'cmaes' in text
+
+
+def test_suggest_panel_is_a_usable_method_list():
+    res = _small_comparison()
+    panel = res.suggest_panel(2)
+    assert len(panel) == 2 and set(panel) <= set(res.methods) and 0 <= panel.covered <= panel.n == 6
+    assert 'suggested panel' in panel.summary()
+    r = minimize(sphere, SPACE5, budget=40, method=panel, seed=0)
+    assert r.method.startswith('panel:')
+
+
+def test_win_rate_interval_brackets_the_rate():
+    res = _small_comparison()
+    w, lo, hi = res.win_rate('cmaes', 'random', ci=True)
+    assert lo <= w <= hi and res.win_rate('cmaes', 'random') == w
+
+
+def test_plot_draws_both_axes():
+    matplotlib = pytest.importorskip('matplotlib')
+    matplotlib.use('Agg')
+    fig = _small_comparison().plot()
+    assert len(fig.axes) == 2

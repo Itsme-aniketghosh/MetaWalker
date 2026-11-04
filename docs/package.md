@@ -56,6 +56,35 @@ minimize(my_fn, my_space, budget=600, method=["rlcma", "gp"])   # then run the p
 The simulated problems come from the same generator as our benchmark: rotated and shifted, with a known
 optimum, so `compare()` scores them by true regret rather than by lucky noisy readings.
 
+## Bring your own optimizer
+
+`register()` adds any optimizer under a method name. After that, the name works everywhere a built-in one does:
+`minimize()`, panels, `compare()`, `MetaWalkerCV` and `AskTell`. Decoding into your space, failed trials,
+caching, `warmup` and `recheck` are handled for you.
+
+```python
+import itertools, numpy as np
+import metawalker as mw
+
+# a walker you trained on your own kind of problem (the object, or the file it was saved to)
+mw.register("my_walker", "my_optimizer.npz")
+
+# or any function: call f(x) on points in the unit cube [0, 1]^n until f.evals reaches budget (lower is better)
+def grid(f, n, budget, rng):
+    for x in itertools.product(np.linspace(0, 1, 5), repeat=n):
+        if f.evals >= budget:
+            break
+        f(np.array(x))
+mw.register("grid", grid)
+
+mw.compare({"mine": (my_fn, my_space)}, methods=["my_walker", "grid", "rlcma"], seeds=5)
+mw.minimize(my_fn, my_space, budget=300, method=["my_walker", "cmaes"])     # in a panel
+MetaWalkerCV(model, space, n_iter=50, method="grid").fit(X, y)              # in a scikit-learn search
+```
+
+With `compare(n_jobs > 1)`, define your function at the top level of a module so it can be sent to the worker
+processes, the same rule as for the objective.
+
 ## What else it does for you
 
 ```python

@@ -10,6 +10,8 @@ Usage: python cluster/check_rlbo.py PATH/TO/rlbo_policy_s0.npy [--quick]
 --quick: 10 dimensions, budget 200, 1 seed (checks the script runs; the threshold is not applied).
 """
 import os
+for _v in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
+    os.environ.setdefault(_v, '1')  # one BLAS thread per worker, before numpy loads
 import shutil
 import sys
 from pathlib import Path

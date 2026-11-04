@@ -80,7 +80,8 @@ def test_compare_parallel_equals_sequential():
     probs = {'sph': make_problem('sphere', 5, seed=1), 'ras': make_problem('rastrigin', 3, seed=2)}
     kw = dict(methods=['cmaes', 'random'], budget=30, seeds=2)
     a, b = compare(probs, **kw), compare(probs, n_jobs=2, **kw)
-    strip = lambda rows: [{k: v for k, v in r.items() if k != 'seconds'} for r in rows]
+    strip = lambda rows: [{k: (v.tolist() if k == 'curve' else v) for k, v in r.items() if k not in ('seconds', 'times')}
+                          for r in rows]
     assert strip(a.rows) == strip(b.rows)
 
 
