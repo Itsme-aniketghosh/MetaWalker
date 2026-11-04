@@ -41,7 +41,7 @@ Why not just throw a standard hyperparameter tuner at this? Because the problem 
 
 ## I trained the optimizer itself, on cheap synthetic problems
 
-Here's the idea. An optimizer is an agent: it looks at the history, picks the next point, sees the result, and repeats. So I can train one with RL, where each episode is one full search on some function. The state is a summary of the history, the actions choose where to look next, and the reward is how close the final answer gets to the optimum. It's the framing of [Chen et al. (2017)](https://arxiv.org/abs/1611.03824), applied to a much nastier target.
+A search algorithm already behaves like an RL agent. It looks at what it has tried so far, picks the next point, and gets a score back. So I trained one with RL: one episode is one whole search on one function, and the reward comes at the end, based on how close the best point it found is to the true optimum. At each step the policy sees a summary of the search so far, and its action is where to look next. [Chen et al. (2017)](https://arxiv.org/abs/1611.03824) set it up the same way. My target is just flatter and noisier.
 
 Why not train on the honeypot directly? One training episode would be hundreds of PPO runs, and ES needs thousands of episodes. Instead I trained on rotated, shifted [standard test functions](https://www.sfu.ca/~ssurjano/optimization.html) plus a synthetic "honeypot-like" family I wrote: 95% flat, one hidden pocket of signal, noisy pass/fail readings.
 
@@ -67,7 +67,7 @@ This is the part I find most interesting. The policy had only ever seen syntheti
 
 The obvious objection: with enough PPO runs, doesn't everything find a good honeypot?
 
-Mostly, yes. Every standard method usually reaches a level scoring ≥0.8 (random search managed it in 1 of 5 searches). What differs is the cost. The walker, with a short random warm-up, got there in a median of 6 PPO runs. BO took 46. When each run is a full training job, that's a big deal.
+Mostly, yes, if you can afford the runs. Every method except random search usually got to a level scoring ≥0.8; random search did it in 1 of 5 searches. So the real question is how many PPO runs it takes. The walker, with a short random warm-up, needed a median of 6. BO needed 46. Each of those is a full PPO training job, so BO spends about 40 extra training runs to reach the same level.
 
 ![Dot plot of PPO runs until each search first found a level scoring 0.8 or more: learned walker median 6, CMA-ES 17, TPE 23, GP 46, SMAC3 67; random search succeeded in 1 of 5 searches](figures/time_to_target.png)
 
