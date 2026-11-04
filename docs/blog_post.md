@@ -123,11 +123,11 @@ Spending the first 20% of the budget on random samples helps a lot: on a 50-dime
 
 ## No method wins everywhere, so the final product runs a panel
 
-rlbo ends with the strongest honeypots, the walker reaches a strong level fastest, CMA-ES wins at large budgets, and GP BO is hard to beat at 100 to 200 dimensions if you can afford its overhead. So if you don't know your landscape, run a panel: several optimizers, each with a share of the budget, keep the best. That's the default in the package, `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)). It also has a drop-in replacement for scikit-learn's `GridSearchCV`. On a 40-hyperparameter search in the demo, it got 0.910 test accuracy against 0.883 for `RandomizedSearchCV`. On small searches (2 to 7 hyperparameters) it only ties random search.
+rlbo ends with the strongest honeypots, the walker reaches a strong level fastest, CMA-ES wins at large budgets, and GP BO is hard to beat at 100 to 200 dimensions if you can afford its overhead. So if you don't know your landscape, run a panel: several optimizers, each with a share of the budget, keep the best. That's the default in the package, `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)), which also ships rlbo (`method="rlbo"`). Its `compare()` runs candidate methods on your own losses and suggests the panel, which is sometimes just one method with the whole budget. You can plug in your own optimizers too. It also has a drop-in replacement for scikit-learn's `GridSearchCV`. On a 40-hyperparameter search in the demo, it got 0.910 test accuracy against 0.883 for `RandomizedSearchCV`. On small searches (2 to 7 hyperparameters) it only ties random search.
 
 The [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) runs both comparisons in a few minutes.
 
-Two caveats. I never ran the panel itself on the honeypot, so the case for it rests on the individual results above. And rlbo, the best method on the honeypot, isn't in the package yet: `pip install metawalker` gives you the walker, RL-CMA and CMA-ES, but not rlbo.
+One caveat: I never ran the panel itself on the honeypot, so the case for it rests on the individual results above.
 
 ## Skills learned on cheap problems transferred to an expensive one
 

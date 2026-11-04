@@ -18,6 +18,7 @@ import numpy as np
 from . import api
 from .api import minimize
 
+COLORS = ('#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948')
 APPROX = ('approximate: a learned or CMA-based method plans for its full budget, so its prefix of a longer run '
           'is not the same as a run with the smaller budget')
 
@@ -35,18 +36,19 @@ def _boot_ci(values, stat=np.mean, n_boot=1000, seed=0):
 class PanelSuggestion(list):
     """The methods suggest_panel() picked. It is a list, so pass it straight to minimize(method=...)."""
 
-    def __init__(self, methods, covered, n, best_single, best_single_covered, k, budget):
+    def __init__(self, methods, covered, n, options, budget):
         super().__init__(methods)
-        self.covered, self.n, self.k, self.budget = covered, n, k, budget
-        self.best_single, self.best_single_covered = best_single, best_single_covered
+        self.covered, self.n, self.options, self.budget = covered, n, options, budget
 
     def summary(self):
-        return (f'suggested panel: {list(self)}\n'
-                f'  reaches the target on {self.covered}/{self.n} runs, each method using {self.budget // self.k} '
-                f'evaluations (budget {self.budget} split {self.k} ways)\n'
-                f'  best single method with the full budget: {self.best_single} on '
-                f'{self.best_single_covered}/{self.n} runs\n'
-                f'  ({APPROX})')
+        lines = [f'suggested: {list(self)}  (reaches the target on {self.covered}/{self.n} runs)',
+                 f'panel sizes compared (budget {self.budget} split evenly):']
+        for j, (methods, covered) in enumerate(self.options, 1):
+            mark = '  <- suggested' if methods == list(self) else ''
+            lines.append(f'  {j} method{"s" if j > 1 else " "} ({self.budget // j:>5d} evals each): '
+                         f'{covered:>3d}/{self.n}  {methods}{mark}')
+        lines.append(f'({APPROX})')
+        return '\n'.join(lines)
 
 
 @dataclass
@@ -81,6 +83,9 @@ class Comparison:
         w = [1.0 if s[a] < s[b] else 0.5 if s[a] == s[b] else 0.0 for s in pairs]
         return (float(np.mean(w)), *_boot_ci(w)) if ci else float(np.mean(w))
 
+    def _w(self):
+        return max([12] + [len(m) + 1 for m in self.methods])
+
     @property
     def best_method(self):
         r = self.ranks()
@@ -88,14 +93,14 @@ class Comparison:
 
     def summary(self):
         r = self.ranks()
-        order = sorted(r, key=r.get)
-        lines = [f"{'method':12s} {'avg rank':>9s} {'median score':>13s} {'failed':>7s} {'s/run':>8s}"]
+        order, w = sorted(r, key=r.get), self._w()
+        lines = [f"{'method':{w}s} {'avg rank':>9s} {'median score':>13s} {'failed':>7s} {'s/run':>8s}"]
         for m in order:
             rs = [x for x in self.rows if x['method'] == m]
-            lines.append(f"{m:12s} {r[m]:9.2f} {np.median([x['score'] for x in rs]):13.4g} "
+            lines.append(f"{m:{w}s} {r[m]:9.2f} {np.median([x['score'] for x in rs]):13.4g} "
                          f"{sum(x['failed'] for x in rs):7d} {np.mean([x['seconds'] for x in rs]):8.2f}")
         lines.append('\nwin rate of row vs column (ties 1/2; * = clear: the 95% bootstrap interval excludes 0.5):')
-        lines.append(' ' * 12 + ''.join(f'{m[:10]:>11s}' for m in order))
+        lines.append(' ' * w + ''.join(f'{m[:10]:>11s}' for m in order))
         for a in order:
             cells = []
             for b in order:
@@ -104,7 +109,7 @@ class Comparison:
                     continue
                 w, lo, hi = self.win_rate(a, b, ci=True)
                 cells.append(f"{w:10.2f}{'*' if lo > 0.5 or hi < 0.5 else ' '}")
-            lines.append(f'{a:12s}' + ''.join(cells))
+            lines.append(f'{a:{w}s}' + ''.join(cells))
         lines.append('\nscore = log10 regret for simulated problems (known optimum), else the best value found'
                      + (' (sign-flipped so lower is better)' if self.maximize else ''))
         return '\n'.join(lines)
@@ -153,14 +158,15 @@ class Comparison:
     def success_table(self, target=None):
         s = self.success(target)
         order = sorted(s, key=lambda m: (-s[m]['rate'], s[m]['evals'] if s[m]['hits'] else math.inf))
-        lines = [f"{'method':12s} {'reached':>9s} {'95% interval':>14s} {'median evals':>13s} {'median s':>9s}"]
+        w = self._w()
+        lines = [f"{'method':{w}s} {'reached':>9s} {'95% interval':>14s} {'median evals':>13s} {'median s':>9s}"]
         for m in order:
             x = s[m]
             lo, hi = x['ci']
             ci = f'[{lo:.0%}, {hi:.0%}]' if not math.isnan(lo) else ''
             ev = f"{x['evals']:.0f}" if x['hits'] else 'never'
             sec = f"{x['seconds']:.2f}" if x['hits'] else ''
-            lines.append(f"{m:12s} {x['hits']:>4d}/{x['runs']:<4d} {ci:>14s} {ev:>13s} {sec:>9s}")
+            lines.append(f"{m:{w}s} {x['hits']:>4d}/{x['runs']:<4d} {ci:>14s} {ev:>13s} {sec:>9s}")
         lines.append('\ntarget: ' + ('the score the best quarter of all runs reached on each problem' if target is None
                                      else str(target)) + '; evals and seconds are medians over the runs that got there')
         return '\n'.join(lines)
@@ -189,35 +195,39 @@ class Comparison:
         ranks = {b: self.at_budget(b).ranks() for b in budgets}
         order = sorted(self.methods, key=lambda m: ranks[budgets[-1]].get(m, math.inf))
         lines = ['average rank (1 = best) after this many evaluations:',
-                 f"{'method':12s}" + ''.join(f'{b:>8d}' for b in budgets)]
+                 f"{'method':{self._w()}s}" + ''.join(f'{b:>8d}' for b in budgets)]
         for m in order:
-            lines.append(f'{m:12s}' + ''.join(f'{ranks[b].get(m, math.nan):8.2f}' for b in budgets))
+            lines.append(f'{m:{self._w()}s}' + ''.join(f'{ranks[b].get(m, math.nan):8.2f}' for b in budgets))
         lines.append(f'\n({APPROX})')
         return '\n'.join(lines)
 
     # ---------- which methods to put in a panel ----------
     def suggest_panel(self, k=3, target=None):
-        """Greedy pick of k methods for minimize(method=[...]). A real panel gives each method budget // k
-        evaluations, so coverage is scored on each run's first budget // k evaluations: at each step, add the
-        method that reaches the target on the most (problem, seed) runs that no chosen method reaches yet
-        (ties: better average rank). Returns a PanelSuggestion, a list you can pass to minimize()."""
+        """Pick up to k methods for minimize(method=[...]). A real panel splits the budget, giving each of its j
+        methods budget // j evaluations, so a panel of size j is scored on each run's first budget // j
+        evaluations. For every size j = 1..k, methods are added greedily: each step adds the method that reaches
+        the target on the most (problem, seed) runs not yet reached (ties: better average rank). The size that
+        reaches the target on the most runs wins (ties: the smaller panel). Size 1 means one method with the full
+        budget, which is often best: splitting hurts when the signal is rare. Returns a PanelSuggestion, a list
+        you can pass to minimize()."""
         if not 1 <= k <= len(self.methods):
             raise ValueError(f'k must be between 1 and {len(self.methods)}')
         tg = self.targets(target)
-        share = self.at_budget(max(1, self.budget // k))
-        inst = sorted({(r['problem'], r['seed']) for r in self.rows})
-        reach = {m: {(r['problem'], r['seed']) for r in share.rows if r['method'] == m and r['score'] <= tg[r['problem']]}
-                 for m in self.methods}
-        full = {m: {(r['problem'], r['seed']) for r in self.rows if r['method'] == m and r['score'] <= tg[r['problem']]}
-                for m in self.methods}
-        rank = share.ranks()
-        chosen, covered = [], set()
-        for _ in range(k):
-            m = max((m for m in self.methods if m not in chosen),
-                    key=lambda m: (len(reach[m] - covered), -rank.get(m, math.inf)))
-            chosen.append(m); covered |= reach[m]
-        single = max(self.methods, key=lambda m: (len(full[m]), -self.ranks().get(m, math.inf)))
-        return PanelSuggestion(chosen, len(covered), len(inst), single, len(full[single]), k, self.budget)
+        n = len({(r['problem'], r['seed']) for r in self.rows})
+        options = []
+        for j in range(1, k + 1):
+            share = self.at_budget(max(1, self.budget // j))
+            reach = {m: {(r['problem'], r['seed']) for r in share.rows
+                         if r['method'] == m and r['score'] <= tg[r['problem']]} for m in self.methods}
+            rank = share.ranks()
+            chosen, covered = [], set()
+            for _ in range(j):
+                m = max((m for m in self.methods if m not in chosen),
+                        key=lambda m: (len(reach[m] - covered), -rank.get(m, math.inf)))
+                chosen.append(m); covered |= reach[m]
+            options.append((chosen, len(covered)))
+        best = max(range(k), key=lambda i: (options[i][1], -i))
+        return PanelSuggestion(options[best][0], options[best][1], n, options, self.budget)
 
     # ---------- picture ----------
     def plot(self, target=None, axes=None):
@@ -229,15 +239,18 @@ class Comparison:
         else:
             fig = axes[0].figure
         hits = self._hits(target)
-        for m in self.methods:
+        t_end = max(r['times'][-1] for r in self.rows if len(r['times']))
+        for c, m in enumerate(self.methods):
             idx = [i for i, r in enumerate(self.rows) if r['method'] == m]
-            ev = np.sort([hits[i] + 1 for i in idx if hits[i] is not None])
-            sec = np.sort([self.rows[i]['times'][hits[i]] for i in idx if hits[i] is not None])
-            frac = np.arange(1, len(ev) + 1) / len(idx)
-            for ax, x, end in ((axes[0], ev, self.budget), (axes[1], sec, None)):
-                if len(x):
-                    xs = np.r_[x, end if end else x[-1]]
-                    ax.step(xs, np.r_[frac, frac[-1]], where='post', linewidth=2, label=m)
+            ok = [i for i in idx if hits[i] is not None]
+            ev = np.sort([hits[i] + 1 for i in ok])
+            sec = np.sort([self.rows[i]['times'][hits[i]] for i in ok])
+            frac = np.arange(len(ok) + 1) / len(idx)
+            style = dict(where='post', linewidth=2, color=COLORS[c % len(COLORS)], label=f'{m}  ({len(ok)}/{len(idx)})')
+            axes[0].step(np.r_[0, ev, self.budget], np.r_[frac, frac[-1]], **style)
+            style.pop('label')
+            axes[1].step(np.r_[min(sec[0], t_end) / 10 if len(sec) else t_end / 1e3, sec, t_end],
+                         np.r_[frac, frac[-1]], **style)
         axes[0].set(xlabel='evaluations', ylabel='share of runs at the target', ylim=(0, 1.02), xlim=(0, self.budget))
         axes[1].set(xlabel='seconds (including the optimizer\'s own time)')
         axes[1].set_xscale('log')

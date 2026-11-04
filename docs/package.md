@@ -48,13 +48,30 @@ res = compare({"my_loss": (my_fn, my_space),
                "stand-in": make_problem("plateau", n=80, noise=0.01)},  # sphere, ellipsoid, rastrigin,
               methods=["rlcma", "walker_hp", "cmaes", "gp"],          # rosenbrock, ackley, levy, plateau
               budget=200, seeds=5)
-print(res.summary())
+print(res.summary())          # average rank, win rates (* = clear: 95% bootstrap interval excludes 0.5), time
+print(res.success_table())    # how often each method reaches a target, and how many evals / seconds it took
+print(res.budget_table())     # average rank at 1/8, 1/4, 1/2 and all of the budget, from the same runs
+res.plot()                    # share of runs at the target vs evaluations and vs seconds (needs matplotlib)
 
-minimize(my_fn, my_space, budget=600, method=["rlcma", "gp"])   # then run the panel you picked
+panel = res.suggest_panel(3)  # best panel of up to 3 methods; often one method with the whole budget
+print(panel.summary())
+minimize(my_fn, my_space, budget=600, method=panel)             # it is a list, so pass it straight in
 ```
 
 The simulated problems come from the same generator as our benchmark: rotated and shifted, with a known
 optimum, so `compare()` scores them by true regret rather than by lucky noisy readings.
+
+**Success** means a run ends at or below a target score and stays there. The default target, per problem,
+is the score the best quarter of all runs reached. Pass `target=` a number, or `{problem: number}`, to set
+your own. Seconds include the optimizer's own time, so a slow optimizer is penalized as it would be in
+practice.
+
+`suggest_panel(k)` scores a panel of j methods on each run's first `budget // j` evaluations, because that is
+what a panel gives each method. It tries every size from 1 to k and keeps the one that reaches the target on
+the most runs. Splitting the budget often hurts when the signal is rare, so the answer is sometimes a single
+method. Rankings at smaller budgets, and the panel scores, come from prefixes of the full runs. A learned or
+CMA-based method plans for its full budget, so these are approximations; rerun `compare()` at the budget you
+will use to confirm.
 
 ## Bring your own optimizer
 
@@ -131,11 +148,13 @@ Notes:
 | `walker_rule` | hand-coded walker distilled from the learned one: move each coordinate with p = 0.6, pull 0.5 toward the best walker, step size `s *= exp(0.5 (success EMA - 0.35))` | as good as `walker`, with no network (mean rank 1.69 vs 1.83 over 12 problems) |
 | `cmaes` | CMA-ES with IPOP restarts (pycma) | small, noisy problems (under ~20 parameters) |
 | `cmaes_rule` | CMA-ES with the hand rule distilled from `rlcma`: sigma × 0.8 after a generation that did not improve, unless stalled 5+ generations or the population is flat | ties `rlcma` (wins 50%) and beats `cmaes` on 78% of runs; `rlcma` stays ahead on Levy/Rastrigin at 10 parameters |
+| `rlbo` | a learned acquisition policy over cheap surrogates: each step it fits local GPs and a global quadratic, proposes 48 candidates, and the policy picks one | the strongest honeypots in our 169-parameter search (PPO exploit rate 0.88 vs 0.76 for CMA-ES); beat CMA-ES on 91–100% of test problems from 20 parameters up and Optuna GP on 76–100%, in ~10–25 s of overhead per 1000-evaluation run |
 | `gp` | Optuna Gaussian-process Bayesian optimization (needs `metawalker[optuna]`) | **expensive** objectives up to ~200 parameters: tied with `rlcma` overall and better at 100–200 parameters, but it costs ~1 hour of its own compute per 1000-evaluation run, and that cost grows fast with evaluations and dimensions |
 | `tpe` | Optuna TPE (needs `metawalker[optuna]`) | baseline; `rlcma` beat it on 70–100% of problems |
 | `random` | random search | baseline |
 | `auto` | `cmaes` below 20 parameters, `rlcma` from 20 up; `gp` up to 200 parameters if you pass `expensive=True` | |
 | `[...]` | any list of methods = your own panel: the budget is split across them and the best is kept | |
+| your name | anything you added with `register()`: a walker you trained, or a function such as grid search | |
 | `panel` | the default panel: `rlcma`, `walker_hp`, `cmaes` | when you don't know the landscape |
 
 Any method also takes `warmup=f`. It spends that fraction of the budget on Latin-hypercube points first, and

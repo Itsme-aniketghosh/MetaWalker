@@ -286,8 +286,9 @@ def test_success_counts_and_budget_slices_agree_with_the_runs():
 def test_suggest_panel_is_a_usable_method_list():
     res = _small_comparison()
     panel = res.suggest_panel(2)
-    assert len(panel) == 2 and set(panel) <= set(res.methods) and 0 <= panel.covered <= panel.n == 6
-    assert 'suggested panel' in panel.summary()
+    assert 1 <= len(panel) <= 2 and set(panel) <= set(res.methods) and 0 <= panel.covered <= panel.n == 6
+    assert len(panel.options) == 2 and panel.covered == max(c for _, c in panel.options)  # the best size wins
+    assert 'suggested' in panel.summary()
     r = minimize(sphere, SPACE5, budget=40, method=panel, seed=0)
     assert r.method.startswith('panel:')
 
