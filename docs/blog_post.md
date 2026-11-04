@@ -41,7 +41,7 @@ Why not just throw a standard hyperparameter tuner at this? Because the problem 
 
 ## I trained the optimizer itself, on cheap synthetic problems
 
-A search algorithm already behaves like an RL agent. It looks at what it has tried so far, picks the next point, and gets a score back. So I trained one with RL: one episode is one whole search on one function, and the reward comes at the end, based on how close the best point it found is to the true optimum. At each step the policy sees a summary of the search so far, and its action is where to look next. [Chen et al. (2017)](https://arxiv.org/abs/1611.03824) set it up the same way. My target is just flatter and noisier.
+The trick is to make the optimizer the RL agent. One episode is one complete search on one function. Each step, the policy gets a summary of the points tried so far and their scores, and outputs where to evaluate next. When the budget runs out it gets a single reward: how much closer its best point ended up to the true optimum than a random guess, on a log scale. (On synthetic functions I know where the optimum is, which is one reason to train on them.) [Chen et al. (2017)](https://arxiv.org/abs/1611.03824) did basically this with RNN optimizers on smooth Gaussian-process samples; mine have to deal with functions that are flat almost everywhere and noisy.
 
 Why not train on the honeypot directly? One training episode would be hundreds of PPO runs, and ES needs thousands of episodes. Instead I trained on rotated, shifted [standard test functions](https://www.sfu.ca/~ssurjano/optimization.html) plus a synthetic "honeypot-like" family I wrote: 95% flat, one hidden pocket of signal, noisy pass/fail readings.
 
