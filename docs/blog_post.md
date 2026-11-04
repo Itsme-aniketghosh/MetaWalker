@@ -123,11 +123,13 @@ Spending the first 20% of the budget on random samples helps a lot: on a 50-dime
 
 ## No method wins everywhere, so the final product runs a panel
 
-rlbo ends with the strongest honeypots, the walker reaches a strong level fastest, CMA-ES wins at large budgets, and GP BO is hard to beat at 100 to 200 dimensions if you can afford its overhead. So if you don't know your landscape, run a panel: several optimizers, each with a share of the budget, keep the best. That's the default in the package, `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)), which also ships rlbo (`method="rlbo"`). Its `compare()` runs candidate methods on your own losses and suggests the panel, which is sometimes just one method with the whole budget. You can plug in your own optimizers too. It also has a drop-in replacement for scikit-learn's `GridSearchCV`. On a 40-hyperparameter search in the demo, it got 0.910 test accuracy against 0.883 for `RandomizedSearchCV`. On small searches (2 to 7 hyperparameters) it only ties random search.
+rlbo ends with the strongest honeypots, the walker reaches a strong level fastest, CMA-ES wins at large budgets, and GP BO is hard to beat at 100 to 200 dimensions if you can afford its overhead. So if you don't know your landscape, run a panel: several optimizers, each with a share of the budget, keep the best. That's the default in the package, `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)), which also ships rlbo as `method="rlbo"`.
 
-The [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) runs both comparisons in a few minutes.
+A panel isn't free, though. Each method gets only part of the budget, and when the signal is rare that hurts. On a mix of flat and smooth test problems, the warmed-up walker alone reached the target on 11 of 15 runs, while a two-method panel with half the budget each reached it on 3. So the package's `compare()` runs candidate methods on your own losses, reports how often and how fast each one gets there, and suggests a panel, which is sometimes a single method with the whole budget. You can register your own optimizers alongside the built-in ones.
 
-One caveat: I never ran the panel itself on the honeypot, so the case for it rests on the individual results above.
+There's also a drop-in replacement for scikit-learn's `GridSearchCV`. On a 40-hyperparameter search in the demo, rlbo reached 0.93 test accuracy and the default method 0.91, against 0.88 for `RandomizedSearchCV`. On small searches (2 to 7 hyperparameters), everything ties random search. The [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) runs both comparisons in a few minutes.
+
+One caveat: I never ran a panel on the honeypot itself, so the case for panels there rests on the individual results above.
 
 ## Skills learned on cheap problems transferred to an expensive one
 
