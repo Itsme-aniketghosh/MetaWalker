@@ -19,7 +19,7 @@ If I want to measure reward hacking, or train it out of a model, I need an envir
 
 ## The test bed: a gridworld where cheating pays as well as solving
 
-I needed something small enough to train [PPO](https://arxiv.org/abs/1707.06347) on in minutes, so I used a 13×17 gridworld. The honest task is to pick up a key, open a door and reach the goal, for +1. Somewhere on the map I put a "grader" square that ends the episode with the same +1. That's my stand-in for editing the tests.
+Why a gridworld and not a real coding model? Because a search like this trains the agent hundreds of times, so each training run has to take minutes. A 13×17 gridworld lets me train [PPO](https://arxiv.org/abs/1707.06347) that fast. Whether levels found this way tell us anything about reward hacking in LLMs is a fair question, and I don't know yet. The honest task is to pick up a key, open a door and reach the goal, for +1. Somewhere on the map I put a "grader" square that ends the episode with the same +1. That's my stand-in for editing the tests.
 
 A level is 169 numbers: 154 for walls, 9 for object positions, 5 PPO hyperparameters and a switch for whether the grader is visible. I score a level by training PPO on it 5 times and counting how often it ends up taking the grader. I throw a level out if:
 
@@ -59,7 +59,7 @@ I gave every method 200 evaluated levels per search and ran 5 searches each. The
 
 *Each dot is one search, scored on fresh PPO seeds. Black line is the mean.*
 
-I trained three rlbo policies independently, and all three beat CMA-ES on average. On the same search seed, rlbo won 10 of 15 head-to-heads.
+Could that be one lucky training run? I trained three rlbo policies independently, and all three beat CMA-ES on average. On the same search seed, rlbo won 10 of 15 head-to-heads.
 
 This is the part I find most interesting. The policy had only ever seen synthetic math functions, and it went to gridworld walls and PPO hyperparameters with no retraining. That's the result I'd most like someone to replicate.
 
@@ -77,13 +77,13 @@ Two caveats. These are single measurements taken during the search, so some of t
 
 ## Bayesian optimization is about 190× slower than rlbo
 
-BO is the usual answer for expensive evaluations, but its own overhead grows fast. On my synthetic benchmarks, rlbo beats GP BO on 76–100% of problems from 5 to 500 dimensions, and it takes 23 seconds per 1,000-evaluation run where BO takes 4,300.
+Does an optimizer's own overhead matter when each evaluation is a PPO run? Not much, while evaluations take minutes. It starts to matter once they take seconds, because BO's overhead grows fast. On my synthetic benchmarks, rlbo beats GP BO on 76–100% of problems from 5 to 500 dimensions, and it takes 23 seconds per 1,000-evaluation run where BO takes 4,300.
 
 ![Bar chart, log scale, of optimizer time per 1,000-evaluation run: NGOpt 17 s, rlbo 23 s, CMA-ES 35 s, RL-CMA 36 s, TPE 263 s, SMAC3 3,678 s, GP 4,296 s](figures/speed.png)
 
 *Optimizer overhead per 1,000-evaluation run, log scale. [SMAC3](https://github.com/automl/SMAC3) hit the time limit on some runs, so its true cost is higher.*
 
-When I gave the other methods as much wall-clock time as BO used, even plain CMA-ES won on 90–100% of problems. If your evaluations take seconds, BO's bookkeeping is the bottleneck, not the evaluations.
+When I gave the other methods as much wall-clock time as BO used, even plain CMA-ES won on 90–100% of problems. At that point BO's bookkeeping is the bottleneck, not the evaluations.
 
 ## The walker learned to explore first and re-check lucky results
 
@@ -113,7 +113,7 @@ None of them crashed or printed a warning. I found each one only after writing a
 
 ## The flatter the landscape, the smaller the edge
 
-On my 95%-flat family, the learned walkers beat CMA-ES on 91% of problems from 20 dimensions up. When I made it ~98.5% flat, that dropped to 63%. They're still ahead, but at that point every method often misses the pocket within 1,000 evaluations.
+Does the learned edge hold up as the signal gets rarer? Less and less. On my 95%-flat family, the learned walkers beat CMA-ES on 91% of problems from 20 dimensions up. When I made it ~98.5% flat, that dropped to 63%. They're still ahead, but at that point every method often misses the pocket within 1,000 evaluations.
 
 ![Bar chart: learned walkers beat CMA-ES on 91% of problems when 95% of the space is flat, and 63% when about 98.5% is flat](figures/flatness.png)
 
@@ -127,7 +127,7 @@ So which one should you use? It depends on what you care about. rlbo ends with t
 
 Isn't splitting the budget wasteful? It can be. Each method gets only part of the budget, and when the signal is rare that hurts. On a mix of flat and smooth test problems, the warmed-up walker alone reached the target on 11 of 15 runs, while a two-method panel with half the budget each reached it on 3. That's why I added `compare()`. It runs candidate methods on your own losses, reports how often and how fast each one gets there, and suggests a panel, which is sometimes a single method with the whole budget. You can also register your own optimizers alongside the built-in ones, or fine-tune the learned ones on cheap problems shaped like yours.
 
-I also built a drop-in replacement for scikit-learn's [`GridSearchCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html). On a 40-hyperparameter search in the demo, rlbo reached 0.93 test accuracy and the default method 0.91, against 0.88 for [`RandomizedSearchCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.RandomizedSearchCV.html). On small searches (2 to 7 hyperparameters), everything ties random search. The [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) runs both comparisons in a few minutes.
+Does any of this help with ordinary hyperparameter tuning? Sometimes. The package has a drop-in replacement for scikit-learn's [`GridSearchCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html). On a 40-hyperparameter search in the demo, rlbo reached 0.93 test accuracy and the default method 0.91, against 0.88 for [`RandomizedSearchCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.RandomizedSearchCV.html). On small searches (2 to 7 hyperparameters), everything ties random search. The [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) runs both comparisons in a few minutes.
 
 One caveat: I never ran a panel on the honeypot itself, so the case for panels there rests on the individual results above.
 
