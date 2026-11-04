@@ -10,6 +10,9 @@ on numpy alone, and each policy is a few KB.
 pip install "metawalker[sklearn]"        # from the repo: pip install -e ".[sklearn]"
 ```
 
+**Try it with no setup:** [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing).
+Code and experiments: [GitHub](https://github.com/Itsme-aniketghosh/MetaWalker).
+
 ## Use it
 
 ```python

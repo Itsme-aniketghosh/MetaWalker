@@ -1,6 +1,9 @@
 # MetaWalker: learned search policies for honeypot and hyperparameter search
 
-The Python package is `metawalker` (`pip install -e .`, then `import metawalker`).
+The Python package is `metawalker`: `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)), or
+`pip install -e .` from this repo. **Try it with no setup in the
+[Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing).**
+Write-up: [docs/blog_post.md](docs/blog_post.md).
 
 RL-trained black-box optimizers for expensive, noisy, many-parameter searches. The motivating application is
 AI-safety "honeypot" search: find the gridworld level and PPO settings (169 parameters) under which a PPO agent
