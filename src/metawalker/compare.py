@@ -107,8 +107,8 @@ class Comparison:
                 if a == b:
                     cells.append(f'{"":>11s}')
                     continue
-                w, lo, hi = self.win_rate(a, b, ci=True)
-                cells.append(f"{w:10.2f}{'*' if lo > 0.5 or hi < 0.5 else ' '}")
+                rate, lo, hi = self.win_rate(a, b, ci=True)
+                cells.append(f"{rate:10.2f}{'*' if lo > 0.5 or hi < 0.5 else ' '}")
             lines.append(f'{a:{w}s}' + ''.join(cells))
         lines.append('\nscore = log10 regret for simulated problems (known optimum), else the best value found'
                      + (' (sign-flipped so lower is better)' if self.maximize else ''))

@@ -111,6 +111,8 @@ def test_compare_on_own_loss_and_simulated_problem():
     assert set(ranks) == {'walker', 'cmaes', 'random'} and abs(sum(ranks.values()) - 6.0) < 1e-9  # ranks 1..3
     assert ranks['random'] > min(ranks['walker'], ranks['cmaes'])
     assert 0 <= res.win_rate('cmaes', 'random') <= 1 and 'win rate' in res.summary()
+    matrix = res.summary().split('win rate of row vs column')[1].splitlines()[2:5]
+    assert [line.split()[0] for line in matrix] == sorted(ranks, key=ranks.get)  # row labels
 
 
 def test_gp_and_auto_expensive():

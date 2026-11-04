@@ -63,7 +63,7 @@ result = mw.minimize(val_loss, space, budget=600, method=panel)
 
 `res.plot()` draws the share of runs at the target against evaluations and against seconds (needs matplotlib).
 
-**4. Plug in your own optimizer:** a walker you trained with `mw.train()`, or any function. After `register()`
+**4. Plug in your own optimizer:** a policy you trained with `mw.train()` (example 5), or any function. After `register()`
 the name works everywhere a built-in method does (`minimize`, panels, `compare`, `MetaWalkerCV`):
 
 ```python
@@ -79,6 +79,25 @@ def grid(f, n, budget, rng):  # call f(x) on points of the unit cube [0, 1]^n un
 mw.register("grid", grid)
 print(mw.minimize(val_loss, space, budget=50, method="grid").best_value)
 ```
+
+**5. Train an optimizer for your kind of problem.** Give `train()` a factory of cheap instances shaped like
+yours, and it fine-tunes a shipped policy on them with evolution strategies (`init=` `"walker_hp"`, `"walker"`,
+`"rlcma"` or `"rlbo"`). This one takes about two minutes on 4 cores:
+
+```python
+import random
+
+def like_my_problem():  # a fresh instance each call: 30 parameters, mostly flat, noisy
+    return mw.make_problem("plateau", n=30, noise=0.01, seed=random.randrange(10**9))
+
+if __name__ == "__main__":  # needed for n_jobs > 1 on Windows and macOS
+    policy = mw.train([like_my_problem], init="walker_hp", generations=10, budget=200, n_jobs=4)
+    policy.save("my_walker.npz")
+    mw.register("my_walker", policy)  # now method="my_walker" works everywhere
+```
+
+Tuning an RL agent on your own environment, and training an optimizer for that, are covered in
+[docs/package.md](docs/package.md#tune-an-rl-agent-or-train-an-optimizer-for-your-own-kind-of-problem).
 
 ### Which method
 

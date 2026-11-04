@@ -122,12 +122,32 @@ def _load_rlbo():
     return theta
 
 
+RLBO_CFG = {'kind': 'rlbo'}
+KINDS = ('walker', 'rlcma', 'rlbo')  # the learned policies train() can fine-tune and register() accepts
+
+
+def _policy_size(cfg):
+    return _rlbo.NPARAM if cfg.get('kind') == 'rlbo' else nparam(cfg)
+
+
+def _run_policy(obj, rng, theta, cfg, **kw):
+    """Run a learned policy of any kind: a walker, RL-controlled CMA-ES, or rlbo."""
+    if cfg['kind'] == 'walker':
+        navigate(obj, rng, theta, cfg, **kw)
+    elif cfg['kind'] == 'rlcma':
+        cmaes(obj if obj.n > 1 else _PadTo2(obj), rng, theta, cfg, **kw)
+    else:
+        obj.cache = None  # rlbo indexes its own history by evaluation count, so every call must be an evaluation
+        _rlbo.rlbo(obj, rng, theta)
+
+
 def register(name, optimizer):
     """Add your own optimizer under a method name. After register('mine', opt), method='mine' works everywhere a
     built-in name does: minimize(), panels such as ['mine', 'cmaes'], compare(), MetaWalkerCV and AskTell.
 
     optimizer is either
-      - a walker you trained with train(): the TrainedPolicy, or the .npz path it was saved to; or
+      - a policy you trained with train() (a walker, rlcma or rlbo): the TrainedPolicy, or the .npz path it
+        was saved to; or
       - any function optimizer(f, n, budget, rng) that calls f(x) on points x in the unit cube [0, 1]^n until
         f.evals reaches budget. Lower is better, and calls past the budget return inf. Decoding into your space,
         failed trials, caching, warmup and recheck are handled for you. For example, a 5-level grid search:
@@ -147,8 +167,8 @@ def register(name, optimizer):
     if isinstance(optimizer, (str, os.PathLike)):
         optimizer = TrainedPolicy.load(optimizer)
     if isinstance(optimizer, TrainedPolicy):
-        if optimizer.cfg.get('kind') != 'walker' or optimizer.theta.shape != (nparam(optimizer.cfg),):
-            raise ValueError('a registered policy must be a walker from train()')
+        if optimizer.cfg.get('kind') not in KINDS or optimizer.theta.shape != (_policy_size(optimizer.cfg),):
+            raise ValueError(f'a registered policy must be one of {KINDS} from train()')
     elif not callable(optimizer):
         raise TypeError('optimizer must be a TrainedPolicy, a path to one, or a function optimizer(f, n, budget, rng)')
     CUSTOM[name] = optimizer
@@ -165,11 +185,12 @@ def _run(method, obj, rng, warmup=0.0):
     custom = CUSTOM.get(method)
     if method not in METHODS[1:-1] and custom is None:
         raise ValueError(f'unknown method {method!r}; choose from {METHODS + tuple(CUSTOM)} (or register() your own)')
-    walker = method in WALKERS or hasattr(custom, 'theta')
-    M = custom.cfg['M'] if hasattr(custom, 'theta') else 4  # walkers per search; 4 for every shipped walker
+    kind = custom.cfg['kind'] if hasattr(custom, 'theta') else None
+    walker, cma = method in WALKERS or kind == 'walker', method in CMAS or kind == 'rlcma'
+    M = custom.cfg['M'] if kind == 'walker' else 4  # walkers per search; 4 for every shipped walker
     if not 0 <= warmup < 1:
         raise ValueError('warmup must be in [0, 1)')
-    if obj.n == 1 and method in CMAS:
+    if obj.n == 1 and cma:
         obj = _PadTo2(obj)
     kw = {}
     if warmup > 0:
@@ -179,24 +200,21 @@ def _run(method, obj, rng, warmup=0.0):
         X, F = _warmup(obj, rng, min(k, obj.budget))
         if walker and len(X) >= M:
             kw = dict(x0=X[:M], f0=F[:M])
-        elif method in CMAS:
+        elif cma:
             kw = dict(x0=X[0])
     if custom is not None:
-        if hasattr(custom, 'theta'):
-            navigate(obj, rng, custom.theta, custom.cfg, **kw)
+        if kind:
+            _run_policy(obj, rng, custom.theta, custom.cfg, **kw)
         else:
             custom(obj, obj.n, obj.budget, rng)
     elif method in POLICIES:
-        theta, cfg = load_policy(method)
-        (navigate if cfg['kind'] == 'walker' else cmaes)(obj, rng, theta, cfg, **kw)
+        _run_policy(obj, rng, *load_policy(method), **kw)
     elif method == 'walker_rule':
         navigate(obj, rng, rule=WALKER_RULE, **kw)
     elif method in ('cmaes', 'cmaes_rule'):
         cmaes(obj, rng, rule=method == 'cmaes_rule', **kw)
     elif method == 'rlbo':
-        theta = _load_rlbo()
-        obj.cache = None  # rlbo indexes its own history by evaluation count, so every call must be an evaluation
-        _rlbo.rlbo(obj, rng, theta)
+        _run_policy(obj, rng, _load_rlbo(), RLBO_CFG)
     elif method in ('tpe', 'gp'):
         optuna_search(obj, rng, method)
     else:

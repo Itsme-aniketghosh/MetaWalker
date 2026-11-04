@@ -1,4 +1,5 @@
-"""train(): fine-tune (or train from scratch) a learned walker optimizer on your own cheap simulated problems.
+"""train(): fine-tune a learned optimizer (walker, rlcma or rlbo), or train a walker from scratch, on your own
+cheap simulated problems.
 
     from metawalker import make_problem
     from metawalker.train import train, TrainedPolicy
@@ -17,7 +18,7 @@ instances with the same walker seed).
 Score of one candidate on one instance (lower is better):
   fn.regret(best_params) if fn has .regret (e.g. metawalker TestProblem: log10 of true value / typical value),
   else the best value found, z-scored per instance across the population so instances of different scale count
-  equally. Fitness = -mean score over the generation's instances. Problems are always minimized.
+  equally. Fitness = -mean score over the generation's instances. maximize=True flips the sign of the value.
 """
 import copy
 import json
@@ -28,8 +29,8 @@ import numpy as np
 
 from .es import es_step
 from .policy import load_policy, nparam, unpack
-from .walker import navigate
-from .api import Result, _Objective, search_rng
+from . import rlbo as _rlbo
+from .api import RLBO_CFG, Result, _Objective, _load_rlbo, _run_policy, search_rng
 from .space import Space
 
 
@@ -50,17 +51,22 @@ class TrainedPolicy:
         if budget < 1:
             raise ValueError('budget must be >= 1')
         obj = _Objective(fn, space if isinstance(space, Space) else Space(space), budget, maximize)
-        navigate(obj, search_rng(seed), self.theta, self.cfg)
+        _run_policy(obj, search_rng(seed), self.theta, self.cfg)
         return Result(obj.best_params, obj.sign * obj.best_y if obj.best_params is not None else math.nan,
-                      obj.evals, 'trained_walker', obj.history, obj.n_failed, maximize=maximize)
+                      obj.evals, f"trained_{self.cfg['kind']}", obj.history, obj.n_failed, maximize=maximize)
 
 
 def _init(init, dirs, hidden, walkers, rng):
     if init in ('walker', 'walker_hp'):
         theta, cfg = load_policy(init)
         return theta.copy(), dict(cfg, M=walkers)
+    if init == 'rlcma':
+        theta, cfg = load_policy(init)
+        return theta.copy(), dict(cfg)
+    if init == 'rlbo':
+        return _load_rlbo().copy(), dict(RLBO_CFG)
     if init != 'scratch':
-        raise ValueError(f"init must be 'walker_hp', 'walker' or 'scratch', got {init!r}")
+        raise ValueError(f"init must be one of 'walker_hp', 'walker', 'rlcma', 'rlbo', 'scratch', got {init!r}")
     if dirs not in ('cov', 'mom'):
         raise ValueError(f"dirs must be 'cov' or 'mom', got {dirs!r}")
     cfg = dict(kind='walker', dirs=dirs, H=hidden, M=walkers)
@@ -70,14 +76,25 @@ def _init(init, dirs, hidden, walkers, rng):
     return theta, cfg
 
 
+def _mask(cfg, size):
+    """Which weights ES moves. rlbo's first layer stays at its random init, as in its original training."""
+    if cfg['kind'] != 'rlbo':
+        return 1.0
+    name, shape = _rlbo.SHAPES[0]
+    assert name == 'W1', name
+    m = np.ones(size)
+    m[:int(np.prod(shape))] = 0.0
+    return m
+
+
 def _scores(args):
     """Top-level (picklable) so multiprocessing workers can run it. Returns (scores, has_regret) per instance."""
-    theta, cfg, instances, budget = args
+    theta, cfg, instances, budget, maximize = args
     out = []
     for fn, space, seed in instances:
         fn = copy.deepcopy(fn)  # each candidate starts from the same instance state (incl. its noise rng)
-        obj = _Objective(fn, space if isinstance(space, Space) else Space(space), budget, False)
-        navigate(obj, np.random.default_rng(seed), theta, cfg)
+        obj = _Objective(fn, space if isinstance(space, Space) else Space(space), budget, maximize)
+        _run_policy(obj, np.random.default_rng(seed), theta, cfg)
         if obj.best_params is None:
             out.append((math.inf, hasattr(fn, 'regret')))
         elif hasattr(fn, 'regret'):
@@ -88,14 +105,17 @@ def _scores(args):
 
 
 def train(problems, dirs='cov', hidden=8, walkers=4, generations=100, pairs=20, instances_per_gen=8, budget=300,
-          sigma=0.1, lr=0.05, seed=0, n_jobs=1, init='walker_hp', callback=None):
-    """Train a walker policy on fresh problem instances; returns a TrainedPolicy.
+          sigma=0.1, lr=0.05, seed=0, n_jobs=1, init='walker_hp', callback=None, maximize=False):
+    """Train a learned optimizer on fresh problem instances; returns a TrainedPolicy.
 
     problems: a list of zero-arg factories, each returning a fresh (fn, space), e.g.
               [lambda: make_problem('plateau', 40, seed=random.randrange(10**9))]; each instance picks one
               factory at random. Or a single function rng -> (fn, space) (reproducible with `seed`).
-    init: 'walker_hp' / 'walker' fine-tune the shipped weights (much faster and more stable; dirs and hidden
-          are then taken from that policy); 'scratch' starts from random weights with your dirs/hidden.
+    init: which shipped policy to fine-tune: 'walker_hp', 'walker', 'rlcma' (learned CMA-ES) or 'rlbo'. Fine-tuning
+          is much faster and more stable than starting over; dirs, hidden and walkers then come from that policy
+          (walkers still sets the walker count). 'scratch' starts a walker from random weights with your dirs/hidden.
+          rlbo costs ~20x a walker per evaluation, so keep its training budgets small.
+    maximize: True if your functions return something to maximize (a reward, an accuracy).
     budget: evaluations per instance; train with roughly the budget you will search with.
     n_jobs > 1: evaluates the population in a multiprocessing.Pool. The factories run in this process, but the
           (fn, space) they return are pickled to the workers, so fn must be picklable: a TestProblem, an
@@ -108,6 +128,7 @@ def train(problems, dirs='cov', hidden=8, walkers=4, generations=100, pairs=20, 
     rng = np.random.default_rng(seed)
     theta, cfg = _init(init, dirs, hidden, walkers, rng)
     m, v = np.zeros_like(theta), np.zeros_like(theta)
+    mask = _mask(cfg, len(theta))
     draw = (lambda: problems[rng.integers(len(problems))]()) if isinstance(problems, (list, tuple)) \
         else (lambda: problems(rng))
     history = []
@@ -115,8 +136,8 @@ def train(problems, dirs='cov', hidden=8, walkers=4, generations=100, pairs=20, 
     try:
         for gen in range(generations):
             instances = [(*draw(), int(rng.integers(2 ** 31))) for _ in range(instances_per_gen)]
-            eps = rng.standard_normal((pairs, len(theta)))
-            tasks = [(c, cfg, instances, budget) for c in np.concatenate([theta + sigma * eps, theta - sigma * eps])]
+            eps = rng.standard_normal((pairs, len(theta))) * mask
+            tasks = [(c, cfg, instances, budget, maximize) for c in np.concatenate([theta + sigma * eps, theta - sigma * eps])]
             res = pool.map(_scores, tasks, chunksize=1) if pool else list(map(_scores, tasks))
             S = np.array([[s for s, _ in r] for r in res])                   # (candidates, instances)
             has_regret = np.array([h for _, h in res[0]])

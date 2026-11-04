@@ -50,3 +50,37 @@ def test_parallel_and_value_scored_problems():
                 generations=2, pairs=2, instances_per_gen=2, budget=20)
     r = pol.minimize(lambda p: (p['a'] - 0.3) ** 2, {'a': (0.0, 1.0), 'b': (0.0, 1.0)}, budget=50, seed=0)
     assert r.n_evals == 50 and r.best_value < 0.01
+
+
+def reward(p):  # something to maximize, peak 1 at a = 0.3
+    return 1 - (p['a'] - 0.3) ** 2
+
+
+def reward_problem(rng):
+    return reward, {'a': (0.0, 1.0), 'b': (0.0, 1.0)}
+
+
+def test_maximize_trains_on_the_reward_itself():
+    # history is the mean of -score, and the score of a maximized function is -reward, so history ~ +reward
+    pol = train(reward_problem, generations=2, pairs=2, instances_per_gen=2, budget=20, maximize=True)
+    assert all(0.5 < h <= 1 for h in pol.history)
+    assert pol.minimize(reward, reward_problem(None)[1], budget=50, seed=0, maximize=True).best_value > 0.99
+
+
+def test_fine_tune_rlcma_and_rlbo(tmp_path):
+    from metawalker import minimize, register
+    from metawalker.api import CUSTOM, _load_rlbo
+    for init, budget in (('rlcma', 60), ('rlbo', 25)):
+        pol = train([plateau5], generations=2, pairs=2, instances_per_gen=2, budget=budget, init=init)
+        assert pol.cfg['kind'] == init and len(pol.history) == 2 and np.isfinite(pol.history).all()
+        pol.save(tmp_path / f'{init}.npz')
+        try:
+            register(f'my_{init}', tmp_path / f'{init}.npz')
+            fn, space = make_problem('rastrigin', 5, seed=1)
+            r = minimize(fn, space, budget=budget, method=f'my_{init}', seed=0, warmup=0.2)
+            assert r.n_evals == budget
+        finally:
+            CUSTOM.pop(f'my_{init}', None)
+    from metawalker.rlbo import F, H
+    shipped = _load_rlbo()  # rlbo's first layer stays frozen; the rest moves
+    assert np.array_equal(pol.theta[:H * F], shipped[:H * F]) and not np.array_equal(pol.theta, shipped)

@@ -83,7 +83,7 @@ caching, `warmup` and `recheck` are handled for you.
 import itertools, numpy as np
 import metawalker as mw
 
-# a walker you trained on your own kind of problem (the object, or the file it was saved to)
+# a policy you trained on your own kind of problem (the object, or the file it was saved to)
 mw.register("my_walker", "my_optimizer.npz")
 
 # or any function: call f(x) on points in the unit cube [0, 1]^n until f.evals reaches budget (lower is better)
@@ -98,6 +98,59 @@ mw.compare({"mine": (my_fn, my_space)}, methods=["my_walker", "grid", "rlcma"], 
 mw.minimize(my_fn, my_space, budget=300, method=["my_walker", "cmaes"])     # in a panel
 MetaWalkerCV(model, space, n_iter=50, method="grid").fit(X, y)              # in a scikit-learn search
 ```
+
+## Tune an RL agent, or train an optimizer for your own kind of problem
+
+Tuning an RL agent on your own environment is an ordinary search. Wrap one training run as a function that
+returns the score you care about:
+
+```python
+import metawalker as mw
+
+def train_agent(p, timesteps=200_000, seed=0):  # one training run on your env; returns mean evaluation return
+    agent = make_agent(my_env, lr=p["lr"], gamma=p["gamma"], ent_coef=p["ent_coef"], seed=seed)
+    agent.learn(timesteps)
+    return evaluate(agent, my_env, episodes=20)
+
+space = {"lr": mw.Float(1e-5, 1e-2, log=True), "gamma": mw.Float(0.9, 0.9999),
+         "ent_coef": mw.Float(1e-4, 0.1, log=True)}
+res = mw.minimize(train_agent, space, budget=100, maximize=True, recheck=3)  # recheck: RL returns are noisy
+```
+
+If you run searches like this often (new environments, new agent variants), you can also train the optimizer
+itself for your kind of problem. That is how the shipped policies were made: trained on cheap synthetic
+functions, then used unchanged on the expensive problem. `train()` takes factories that return a fresh
+`(function, space)` on every call, fine-tunes one of the shipped policies with evolution strategies, and returns
+a policy you can save, register and compare:
+
+```python
+import random
+
+def like_my_problem():  # a fresh cheap instance each call, shaped like yours: 12 knobs, mostly flat, noisy
+    return mw.make_problem("plateau", n=12, noise=0.05, seed=random.randrange(10**9))
+
+policy = mw.train([like_my_problem], init="walker_hp", budget=100, generations=50, n_jobs=8)
+policy.save("my_tuner.npz")
+mw.register("my_tuner", "my_tuner.npz")
+res = mw.minimize(train_agent, space, budget=100, method="my_tuner", maximize=True, recheck=3)
+```
+
+- `init` picks the policy to fine-tune: `"walker_hp"`, `"walker"`, `"rlcma"` or `"rlbo"`, or `"scratch"` for a
+  walker from random weights. Fine-tuning is far faster and more stable than starting over.
+- The factories can return anything `minimize()` accepts: a `make_problem()` stand-in, your own analytic
+  proxy, or a tiny version of the real thing (a small env, a few hundred steps). Pass `maximize=True` if they
+  return a reward. A function with a `.regret(params)` method (as `make_problem()` problems have) is scored by
+  true regret, which is much less noisy than the best observed value.
+- Cost: each generation runs `2 * pairs * instances_per_gen` searches (320 by default) of `budget` evaluations
+  each, so a stand-in has to evaluate in milliseconds. Real RL runs are almost always too slow for this. Train
+  on a stand-in, then search the real environment with the result. rlbo costs about 20 times a walker per
+  evaluation, so keep its training budgets small.
+- Train with about the budget you will search with. Check the result on instances it never trained on, with
+  `compare()` against the shipped policies, before you trust it.
+- `callback(gen, policy)` runs after every generation (save checkpoints there), and `policy.history` holds
+  the mean training score per generation. It is noisy, because every generation draws new instances.
+- With `n_jobs > 1`, the functions the factories return are sent to worker processes, so they must be picklable:
+  a `make_problem()` problem, an instance of a top-level class, or a top-level function, not a lambda.
 
 With `compare(n_jobs > 1)`, define your function at the top level of a module so it can be sent to the worker
 processes, the same rule as for the objective.
@@ -118,8 +171,8 @@ print(cert.summary())               # cert.shrinkage = how much the raw best sco
 # 3. which parameters mattered, which direction helps, and the best range (free, from the search history)
 print(mw.importance(res).summary())
 
-# 4. train an optimizer specialized to YOUR kind of problem, on cheap simulated stand-ins
-policy = mw.train([lambda: my_simulator_factory()], init="walker_hp", generations=50, n_jobs=8)
+# 4. train an optimizer for YOUR kind of problem on cheap stand-ins (see "Tune an RL agent" above)
+policy = mw.train([like_my_problem], init="rlcma", generations=50, n_jobs=8)
 policy.save("my_optimizer.npz"); policy.minimize(my_fn, my_space, budget=300)
 
 # 5. evaluate on your own workers / cluster, or plug into an existing Optuna study
@@ -154,7 +207,7 @@ Notes:
 | `random` | random search | baseline |
 | `auto` | `cmaes` below 20 parameters, `rlcma` from 20 up; `gp` up to 200 parameters if you pass `expensive=True` | |
 | `[...]` | any list of methods = your own panel: the budget is split across them and the best is kept | |
-| your name | anything you added with `register()`: a walker you trained, or a function such as grid search | |
+| your name | anything you added with `register()`: a policy you fine-tuned with `train()`, or a function such as grid search | |
 | `panel` | the default panel: `rlcma`, `walker_hp`, `cmaes` | when you don't know the landscape |
 
 Any method also takes `warmup=f`. It spends that fraction of the budget on Latin-hypercube points first, and
