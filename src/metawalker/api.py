@@ -1,17 +1,19 @@
 """minimize(): one entry point for every optimizer in the package."""
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
+from . import rlbo as _rlbo
 from .baselines import optuna_search, random_search
 from .cma import cmaes
 from .policy import POLICIES, load_policy
 from .space import Space
 from .walker import WALKER_RULE, navigate
 
-METHODS = ('auto', 'rlcma', 'walker', 'walker_hp', 'walker_hp_warm', 'walker_rule', 'cmaes', 'cmaes_rule', 'gp', 'tpe',
-           'random', 'panel')
+METHODS = ('auto', 'rlcma', 'walker', 'walker_hp', 'walker_hp_warm', 'walker_rule', 'cmaes', 'cmaes_rule', 'rlbo', 'gp',
+           'tpe', 'random', 'panel')
 WALKERS = ('walker', 'walker_hp', 'walker_rule')
 CMAS = ('rlcma', 'cmaes', 'cmaes_rule')
 PANEL = ('rlcma', 'walker_hp', 'cmaes')
@@ -104,6 +106,20 @@ def _warmup(obj, rng, k):
     return X[order], F[order]
 
 
+def _rlbo_policy_path():
+    return Path(__file__).parent / 'policies' / 'rlbo_s0.npy'
+
+
+def _load_rlbo():
+    path = _rlbo_policy_path()
+    if not path.exists():
+        raise FileNotFoundError(f"method='rlbo' needs the trained policy {path.name}, which this build of "
+                                "metawalker does not include yet")
+    theta = np.load(path)
+    assert theta.shape == (_rlbo.NPARAM,), ('rlbo', theta.shape)
+    return theta
+
+
 def _run(method, obj, rng, warmup=0.0):
     if method == 'walker_hp_warm':
         method, warmup = 'walker_hp', warmup or 0.2
@@ -130,6 +146,10 @@ def _run(method, obj, rng, warmup=0.0):
         navigate(obj, rng, rule=WALKER_RULE, **kw)
     elif method in ('cmaes', 'cmaes_rule'):
         cmaes(obj, rng, rule=method == 'cmaes_rule', **kw)
+    elif method == 'rlbo':
+        theta = _load_rlbo()
+        obj.cache = None  # rlbo indexes its own history by evaluation count, so every call must be an evaluation
+        _rlbo.rlbo(obj, rng, theta)
     elif method in ('tpe', 'gp'):
         optuna_search(obj, rng, method)
     else:
@@ -143,6 +163,7 @@ def minimize(fn, space, budget=200, method='auto', maximize=False, seed=None, re
     method: 'rlcma', 'walker', 'walker_hp' (walker trained with plateau-shaped problems too), 'cmaes',
             'walker_rule' / 'cmaes_rule' (hand rules distilled from the learned walker / rlcma),
             'walker_hp_warm' (walker_hp with warmup=0.2: for rare-signal objectives),
+            'rlbo' (learned acquisition over cheap surrogates; needs policies/rlbo_s0.npy),
             'gp' / 'tpe' (Optuna; needs metawalker[optuna]), 'random';
             'auto': CMA-ES below 20 parameters, RL-controlled CMA-ES from 20 up, or Optuna GP up to 200
                     parameters when expensive=True (each evaluation costs far more than GP's own overhead);

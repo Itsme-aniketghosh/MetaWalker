@@ -173,3 +173,23 @@ def test_walker_runs_on_a_bare_problem():
     p = Bare()
     navigate(p, np.random.default_rng(0))
     assert p.evals == 60
+
+
+def test_rlbo_without_policy_file_says_so(monkeypatch, tmp_path):
+    import metawalker.api as api
+    monkeypatch.setattr(api, '_rlbo_policy_path', lambda: tmp_path / 'rlbo_s0.npy')
+    with pytest.raises(FileNotFoundError, match='rlbo_s0.npy'):
+        minimize(sphere, SPACE5, budget=20, method='rlbo')
+
+
+def test_rlbo_runs_on_a_mixed_space_within_budget(monkeypatch, tmp_path):
+    """Wiring check with an untrained policy: ints and categoricals repeat points, and rlbo must not overrun."""
+    import metawalker.api as api
+    from metawalker.rlbo import init_theta
+    np.save(tmp_path / 'rlbo_s0.npy', init_theta(np.random.default_rng(0)))
+    monkeypatch.setattr(api, '_rlbo_policy_path', lambda: tmp_path / 'rlbo_s0.npy')
+    space = {'a': (0.0, 1.0), 'k': Int(0, 3), 'c': ['x', 'y'], **{f'z{i}': (0.0, 1.0) for i in range(4)}}
+    f = lambda p: (p['a'] - 0.3) ** 2 + (p['k'] - 2) ** 2 + (p['c'] == 'x') + sum(p[f'z{i}'] ** 2 for i in range(4))
+    r = minimize(f, space, budget=60, method='rlbo', seed=0)
+    assert r.n_evals == 60 and len(r.history) == 60 and math.isfinite(r.best_value)
+    assert r.best_value < 2  # better than the typical random point
