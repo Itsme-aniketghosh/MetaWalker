@@ -1,13 +1,14 @@
 # MetaWalker: learned optimizers for expensive, noisy, many-parameter searches
 
-Black-box optimizers that were themselves trained with reinforcement learning (evolution strategies) on cheap
-synthetic problems, then frozen. They run on numpy alone; each trained policy is a few KB. The motivating use is
-AI-safety "honeypot" search: finding the gridworld level and PPO settings (169 parameters) under which a PPO agent
-takes a planted exploit instead of the honest task.
+These are black-box optimizers that learned how to search. Each one was trained with evolution strategies on
+cheap synthetic problems and then frozen, so at run time it needs only numpy, and a policy is a few KB. I built
+them to find reward-hacking honeypots: the gridworld level and PPO settings (169 parameters) under which PPO
+takes a planted exploit instead of doing the task. They work just as well as an ordinary hyperparameter tuner.
 
-- **Package:** `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/))
-- **Try it with no setup:** [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) (a few minutes)
-- **Write-up:** [docs/blog_post.md](docs/blog_post.md) · **Full API:** [docs/package.md](docs/package.md)
+Install with `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)), or try it first in the
+[Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing): no setup,
+a few minutes. The story behind it is in the [write-up](docs/blog_post.md), and the full API in
+[docs/package.md](docs/package.md).
 
 ## Quick start
 
@@ -105,9 +106,11 @@ python -m experiments.benchmark smoke_hpx      # one-minute self-check of the wa
 `experiments/` holds the scripts behind every number in `results/`. The cluster runs used Northeastern's
 Explorer: `sbatch cluster/setup.sbatch` once to build the environment, then `cluster/run.sbatch` (benchmarks and
 training) and `cluster/honeypot.sbatch` (honeypot searches); usage examples are in each script's header.
-`cluster/rlbo_release.sbatch` checks a trained rlbo policy before it ships in the package. The bit-for-bit
-regression tests only run on the platform and library versions their golden outputs were recorded with
-(`tests/golden/`); elsewhere they skip.
+`cluster/rlbo_release.sbatch` checks a trained rlbo policy before it ships in the package.
+
+The regression tests compare every optimizer bit for bit against recorded outputs. Floating point differs across
+platforms and math libraries, so they only run where those outputs were recorded (`tests/golden/`) and skip
+everywhere else. A plain `pip install` gets OpenBLAS numpy, which is enough to change the numbers.
 
 ## Results
 
@@ -177,12 +180,9 @@ experiment scripts and shell scripts).
 | Risk: self-checks for bugs | `tests/` | supporting code |
 | Cluster runs (CPU-only Explorer) | `cluster/*.sbatch` | supporting code |
 
-**The rest** is not in the proposal. It is the package's user-facing API, all supporting code: `api.py`
-(`minimize`), `sklearn.py` (`MetaWalkerCV`), `asktell.py`, `space.py`, `compare.py`, `recommend.py`,
-`importance.py`, `train.py`, and `experiments/demo.py`.
-
-`tests/` checks the library and the experiments. `tests/test_regression.py` confirms that every optimizer
-reproduces the pre-refactor code bit for bit. `cluster/` holds the Slurm scripts.
+Everything else is the package's user-facing API, which the proposal doesn't cover and which is all
+supporting code: `api.py` (`minimize`, `register`), `sklearn.py` (`MetaWalkerCV`), `asktell.py`, `space.py`,
+`compare.py`, `recommend.py`, `importance.py`, `train.py`, and `experiments/demo.py`.
 
 ## Project documents
 
