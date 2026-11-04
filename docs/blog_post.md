@@ -133,6 +133,6 @@ One caveat: I never ran a panel on the honeypot itself, so the case for panels t
 
 ## Skills learned on cheap problems transferred to an expensive one
 
-Hand-building honeypots costs researcher time per environment. A learned optimizer turns that into a couple hundred PPO runs. More interesting to me is that the instincts the policy learned on cheap synthetic problems (when to explore, when to distrust a result, when to look again) transferred to an expensive, noisy problem it never trained on. That's a property of a lot of ML search problems, not just honeypots.
+Hand-building honeypots costs researcher time per environment. A learned optimizer turns that into a couple hundred PPO runs. More interesting to me is that the instincts the policy learned on cheap synthetic problems (when to explore, when to distrust a result, when to look again) transferred to an expensive, noisy problem it never trained on. A lot of hyperparameter search looks like that: slow, noisy evaluations and a budget of a few hundred. So I'd expect the trick to carry over, but so far I've tested it on exactly one honeypot.
 
 [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) · [PyPI](https://pypi.org/project/metawalker/) · [GitHub](https://github.com/Itsme-aniketghosh/MetaWalker) (gridworld and all experiments)
