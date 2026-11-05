@@ -8,7 +8,7 @@ certified result (winner's-curse check).
 Methods: random, cmaes, tpe, optuna_gp, smac, walker_hand_cov, rl:VARIANT:SEED (a trained benchmark policy; add
 ':warm' to start from the best points of a 20% Latin-hypercube warm-up), handoff:VARIANT:SEED (walker 30%, then
 CMA-ES), cmawalk:VARIANT:SEED (CMA-ES 50%, then walkers), rlbo:sK, ns:METHOD (any metawalker.minimize method), and
-panel (the package's default panel: the budget split equally across metawalker.api.PANEL, run in turn), and
+panel (the package's original default panel, HONEYPOT_PANEL: the budget split equally, run in turn), and
 panel:K (member K of that panel alone, so the members run as parallel jobs; then `combine` certifies the search).
 Options (env): HP_REEVAL re-measurement seeds (10); HP_FREE=1 structural rejections cost no budget; HP_CACHE=1
 re-proposed levels are free; HP_GRID / HP_STRAT walker grid moves / Latin-hypercube jumps; HP_CERT10 certify every
@@ -166,6 +166,9 @@ class Share:
         return getattr(self.prob, name)
 
 
+PANEL = HONEYPOT_PANEL = ('rlcma', 'walker_hp', 'cmaes')  # metawalker's default panel up to 0.2.6: the honeypot runs
+
+
 def run_panel(prob, rng, methods):
     """Equal split, no racing, each method seeded from rng: metawalker.minimize's panel, on the honeypot."""
     from metawalker.api import _run
@@ -175,8 +178,7 @@ def run_panel(prob, rng, methods):
 
 
 def panel_member(budget, rng, k):
-    """(method, share, offset, seed) of member k of metawalker.api.PANEL: the same split and seeds as run_panel."""
-    from metawalker.api import PANEL
+    """(method, share, offset, seed) of member k of HONEYPOT_PANEL: the same split and seeds as run_panel."""
     shares = [budget // len(PANEL) + (1 if i < budget % len(PANEL) else 0) for i in range(len(PANEL))]
     seeds = [int(rng.integers(2 ** 31)) for _ in PANEL]
     return PANEL[k], shares[k], sum(shares[:k]), seeds[k]
@@ -186,7 +188,6 @@ def combine_panel(space, search_seed):
     """One panel search from its members' runs, certified as run() certifies a single search: the CERT_TOP best
     candidates by search score over all members, then the best of those on the re-measurements. Every member
     re-measured its own top CERT_TOP on the same fresh seeds, so the overall top CERT_TOP are already measured."""
-    from metawalker.api import PANEL
     out = HERE / 'runs'
     parts = [json.load(open(out / f'{space}_panel-{k}_s{search_seed}.json')) for k in range(len(PANEL))]
     pool = [dict(t, member=PANEL[k]) for k, p in enumerate(parts) for t in p['cert_table']]
@@ -239,7 +240,6 @@ def run(space, method, search_seed, budget):
             from metawalker.api import _run
             _run(method[3:], prob, rng)
         elif method == 'panel':
-            from metawalker.api import PANEL
             run_panel(prob, rng, PANEL)
         elif method.startswith('panel:'):
             from metawalker.api import _run

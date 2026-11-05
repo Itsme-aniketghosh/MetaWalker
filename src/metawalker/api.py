@@ -17,7 +17,7 @@ METHODS = ('auto', 'rlcma', 'walker', 'walker_hp', 'walker_hp_warm', 'walker_rul
            'tpe', 'random', 'panel')
 WALKERS = ('walker', 'walker_hp', 'walker_rule')
 CMAS = ('rlcma', 'cmaes', 'cmaes_rule')
-PANEL = ('rlcma', 'walker_hp', 'cmaes')
+PANEL = ('rlbo', 'rlcma', 'cmaes')  # 0.2.7: rlbo replaced walker_hp, the weak member on the honeypot
 CUSTOM = {}  # your own optimizers by method name: see register()
 AUTO_HIGH_DIM = 20   # benchmark: CMA-ES wins below ~20 dims, RL-controlled CMA-ES wins from ~50 up
 AUTO_GP_MAX_DIM = 200  # benchmark: Optuna GP is strongest at 50-200 dims when its ~1 h/run overhead is affordable
@@ -235,7 +235,7 @@ def minimize(fn, space, budget=200, method='auto', maximize=False, seed=None, re
             'auto': CMA-ES below 20 parameters, RL-controlled CMA-ES from 20 up, or Optuna GP up to 200
                     parameters when expensive=True (each evaluation costs far more than GP's own overhead);
             a list of methods, e.g. ['rlcma', 'gp', 'cmaes']: your own panel; the budget is split across them
-                    and the best result is kept; 'panel' = ['rlcma', 'walker_hp', 'cmaes'].
+                    and the best result is kept; 'panel' = ['rlbo', 'rlcma', 'cmaes'].
     fn may raise or return nan/inf for invalid configurations; those count as failed trials.
     warmup: fraction of the budget spent first on Latin-hypercube points (counted in the budget and history);
             walkers then start at the best 4 of them, CMA-based methods at the best one, other methods just use

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metawalker"
-version = "0.2.6"
+version = "0.2.7"
 description = "Learned black-box optimizers (RL-controlled CMA-ES, learned walkers) as a drop-in for GridSearchCV"
 readme = "docs/package.md"
 license = {text = "MIT"}
