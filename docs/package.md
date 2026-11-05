@@ -115,6 +115,7 @@ def train_agent(p, timesteps=200_000, seed=0):  # one training run on your env; 
 space = {"lr": mw.Float(1e-5, 1e-2, log=True), "gamma": mw.Float(0.9, 0.9999),
          "ent_coef": mw.Float(1e-4, 0.1, log=True)}
 res = mw.minimize(train_agent, space, budget=100, maximize=True, recheck=3)  # recheck: RL returns are noisy
+res = mw.minimize(train_agent, space, budget=150, method="panel", maximize=True, n_jobs=3)  # 3 methods at once
 ```
 
 If you run searches like this often (new environments, new agent variants), you can also train the optimizer
@@ -233,7 +234,9 @@ Nevergrad NGOpt is in progress.
 - **Categorical parameters** are one coordinate split into equal bins. That's fine for a few choices, but
   unordered categoricals with many choices are a known weak spot.
 - **1-parameter searches** with the CMA-based methods add an ignored dummy coordinate, because pycma needs 2+.
-- The `panel` budget is split equally, with no racing between methods.
+- The `panel` budget is split equally, with no racing between methods. `minimize(..., n_jobs=3)` runs the
+  methods at the same time, in threads, with the same result. That helps when your function spends its time
+  outside Python (torch, jax, a subprocess, a remote job), and it must be safe to call from several threads.
 
 ## Tests
 

@@ -102,6 +102,23 @@ def test_user_panel_and_unknown_method():
         minimize(sphere, SPACE5, budget=10, method=['walker', 'nonsense'])
 
 
+def test_parallel_panel_gives_the_same_result_from_several_threads():
+    import threading, time
+    threads = set()
+
+    def slow_sphere(p):  # sleeps like a call into torch/jax or a subprocess would, releasing the GIL
+        threads.add(threading.get_ident()); time.sleep(0.001)
+        return sphere(p)
+
+    panel = ['walker', 'cmaes', 'random']
+    seq = minimize(slow_sphere, SPACE5, budget=90, method=panel, seed=0)
+    threads.clear()
+    par = minimize(slow_sphere, SPACE5, budget=90, method=panel, seed=0, n_jobs=3)
+    assert len(threads) == 3  # every member ran in its own thread
+    assert (par.best_value, par.best_params, par.method, par.n_evals) == (seq.best_value, seq.best_params, seq.method, 90)
+    assert par.history == seq.history  # members' histories in panel order, whatever order they finished in
+
+
 def test_compare_on_own_loss_and_simulated_problem():
     from metawalker import compare, make_problem
     res = compare({'my_loss': (sphere, SPACE5), 'sim': make_problem('rastrigin', 8, seed=2)},

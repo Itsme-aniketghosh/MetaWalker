@@ -222,7 +222,7 @@ def _run(method, obj, rng, warmup=0.0):
 
 
 def minimize(fn, space, budget=200, method='auto', maximize=False, seed=None, recheck=0, expensive=False,
-             warmup=0.0, cache=True):
+             warmup=0.0, cache=True, n_jobs=1):
     """Optimize fn(params: dict) -> float over `space` with `budget` evaluations.
 
     method: 'rlcma', 'walker', 'walker_hp' (walker trained with plateau-shaped problems too), 'cmaes',
@@ -241,6 +241,10 @@ def minimize(fn, space, budget=200, method='auto', maximize=False, seed=None, re
             the rest of the budget. Helps when the signal is rare (a small live region on a flat objective).
     recheck: re-evaluate the best configuration this many extra times (outside the budget) and report the
              values, because on noisy objectives the best observed value is biased upward (winner's curse).
+    n_jobs: with a panel, run up to this many of its methods at the same time, in threads. Each method keeps its own
+            share, seed and history, so the result is the same as with n_jobs=1. It speeds things up when fn
+            spends its time outside Python (training with torch/jax, a subprocess, a remote job); fn must then be
+            safe to call from several threads at once.
     cache: a configuration that decodes to one already tried (common with Int / Categorical parameters) reuses its
            value instead of calling fn again, and costs no budget. Pass cache=False to re-sample a noisy fn.
     """
@@ -259,11 +263,18 @@ def minimize(fn, space, budget=200, method='auto', maximize=False, seed=None, re
         if not panel or bad:
             raise ValueError(f'panel methods must be from {METHODS[1:-1] + tuple(CUSTOM)}; got {list(panel)}')
         # shortcut: equal split, no racing; upgrade to successive halving across methods if budgets get large
-        results = []
-        for i, m in enumerate(panel):
+        seeds = [int(rng.integers(2 ** 31)) for _ in panel]  # drawn up front: results don't depend on n_jobs
+
+        def member(i):
             share = budget // len(panel) + (1 if i < budget % len(panel) else 0)
-            results.append(minimize(fn, sp, max(share, 1), m, maximize, int(rng.integers(2 ** 31)), warmup=warmup,
-                                    cache=cache))
+            return minimize(fn, sp, max(share, 1), panel[i], maximize, seeds[i], warmup=warmup, cache=cache)
+
+        if n_jobs > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(min(n_jobs, len(panel))) as ex:
+                results = list(ex.map(member, range(len(panel))))
+        else:
+            results = [member(i) for i in range(len(panel))]
         best = min(results, key=lambda r: (-r.best_value if maximize else r.best_value)
                    if r.best_params is not None else math.inf)
         out = Result(best.best_params, best.best_value, sum(r.n_evals for r in results), f'panel:{best.method}',
