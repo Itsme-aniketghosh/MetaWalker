@@ -84,6 +84,7 @@ class HoneypotProblem(MeanBest):
 
     def __init__(self, space, search_seed, budget, log):
         self.space, self.n, self.budget, self.seed = space, E.SPACES[space][0], budget, search_seed
+        self.cap_budget = budget  # free rejections / cache hits allowed: FREE_CAP x this
         self.scale, self.noise_sd = 1.0, 0.05
         self.evals, self.best_y, self.best_x, self.obs = 0, np.inf, None, {}
         self.strat_jumps = STRAT
@@ -120,14 +121,14 @@ class HoneypotProblem(MeanBest):
         if self.evals >= self.budget:
             return np.inf
         k = self.key(x) if CACHE and not self._fresh else None
-        if k in self.obs and self.cached < FREE_CAP * self.budget:
+        if k in self.obs and self.cached < FREE_CAP * self.cap_budget:
             self.cached += 1
             y = self.obs[k][0] / self.obs[k][1]
             self.log.write(json.dumps(dict(x=[float(v) for v in x], y=y, eval=self.evals, cached=True, free=True)) + '\n')
             return y
         r = E.evaluate(x, seed=1_000_003 * self.seed + self.offset + self.evals + 1, space=self.space)  # fresh PPO seeds each eval
         y = 1.0 - r['exploit'] if r['valid'] else (r.get('penalty') or INVALID)
-        free = FREE and not r['valid'] and r['reason'] != PPO_REJECT and self.free < FREE_CAP * self.budget
+        free = FREE and not r['valid'] and r['reason'] != PPO_REJECT and self.free < FREE_CAP * self.cap_budget
         self.free += free
         if not free:
             self.evals += 1
@@ -210,12 +211,15 @@ def run(space, method, search_seed, budget):
     stem = out / f"{space}_{method.replace(':', '-')}_s{search_seed}"
     rng = np.random.default_rng(search_seed + 1)
     t0 = time.time()
+    full_budget = budget
     if method.startswith('panel:'):
         member, budget, offset, member_seed = panel_member(budget, rng, int(method.split(':')[1]))
     with open(f'{stem}.jsonl', 'w') as log:
         prob = HoneypotProblem(space, search_seed, budget, log)
         if method.startswith('panel:'):
-            prob.offset = offset
+            # a member's free allowance is a full search's, as for any single method; capped at its own share, the
+            # walker spent its PPO budget on structural rejections once the cap ran out
+            prob.offset, prob.cap_budget = offset, full_budget
         if method.startswith('rl:'):
             pol = method.removesuffix(':warm')
             cfg = nb.VARIANTS[pol.split(':')[1]]
