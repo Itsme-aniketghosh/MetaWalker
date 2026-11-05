@@ -104,17 +104,20 @@ def test_user_panel_and_unknown_method():
 
 def test_parallel_panel_gives_the_same_result_from_several_threads():
     import threading, time
-    threads = set()
+    barrier, threads = None, set()
 
     def slow_sphere(p):  # sleeps like a call into torch/jax or a subprocess would, releasing the GIL
-        threads.add(threading.get_ident()); time.sleep(0.001)
+        if barrier is not None and threading.get_ident() not in threads:
+            threads.add(threading.get_ident())
+            barrier.wait()  # opens only when all 3 members are running at once
+        time.sleep(0.001)
         return sphere(p)
 
     panel = ['rlcma', 'walker', 'cmaes']  # two CMA-based methods: pycma must not share numpy's global generator
     seq = minimize(slow_sphere, SPACE5, budget=90, method=panel, seed=0)
-    threads.clear()
+    barrier = threading.Barrier(3, timeout=30)
     par = minimize(slow_sphere, SPACE5, budget=90, method=panel, seed=0, n_jobs=3)
-    assert len(threads) == 3  # every member ran in its own thread
+    assert len(threads) == 3 and not barrier.broken  # every member ran in its own thread, at the same time
     assert (par.best_value, par.best_params, par.method, par.n_evals) == (seq.best_value, seq.best_params, seq.method, 90)
     assert par.history == seq.history  # members' histories in panel order, whatever order they finished in
 
