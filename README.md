@@ -106,7 +106,7 @@ Tuning an RL agent on your own environment, and training an optimizer for that, 
 | Not sure | `"auto"` (default) | CMA-ES below 20 parameters, the learned CMA-ES from 20 up |
 | Many parameters, some structure | `"rlbo"` | strongest honeypots in our search; beat CMA-ES on 91–100% of test problems from 20 parameters up |
 | Flat, rare signal (most points score the same) | `"walker_hp_warm"` | random warm-up, then a learned walker; found a 50-D hidden region in 13/20 runs vs 2/20 for CMA-ES |
-| Unknown landscape, no time to test | `"panel"` | splits the budget across learned CMA-ES, walker and CMA-ES; `n_jobs=3` runs them at the same time |
+| Unknown landscape, no time to test | `"panel"` | splits the budget across learned CMA-ES, walker and CMA-ES; `allocate="race"` moves budget to the methods doing best, `n_jobs=3` runs them at the same time |
 | Each evaluation costs minutes or more, up to ~200 parameters | `"gp"` (needs `metawalker[optuna]`) | Optuna GP; strong per evaluation but ~1 h of its own overhead per 1,000 evaluations |
 
 Every method, and the rest of the API (`certify`, `importance`, `AskTell`, `train`, Optuna sampler), is in

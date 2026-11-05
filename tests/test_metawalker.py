@@ -323,3 +323,20 @@ def test_plot_draws_both_axes():
     matplotlib.use('Agg')
     fig = _small_comparison().plot()
     assert len(fig.axes) == 2
+
+
+def test_panel_allocate_each_and_race():
+    panel = ['random', 'cmaes', 'rlcma']
+    each = minimize(sphere, SPACE5, budget=60, method=panel, seed=0, allocate='each')
+    assert each.allocation == {m: 60 for m in panel} and each.n_evals == 180
+    assert each.best_value == min(v for _, v in each.history)  # the best of every method's full run
+    race = minimize(sphere, SPACE5, budget=120, method=panel, seed=0, allocate='race')
+    assert sum(race.allocation.values()) == race.n_evals == 120
+    first_round = 120 // 3 // 3 + 1  # 3 rounds; the first gives each method ~13
+    assert min(race.allocation.values()) <= first_round  # one method was dropped after the first round
+    assert max(race.allocation.values()) > 120 / 3 and race.method == 'race:' + max(panel, key=race.allocation.get)
+    assert race.best_value == min(v for _, v in race.history)
+    par = minimize(sphere, SPACE5, budget=120, method=panel, seed=0, allocate='race', n_jobs=3)
+    assert (par.best_value, par.allocation, par.history) == (race.best_value, race.allocation, race.history)
+    with pytest.raises(ValueError):
+        minimize(sphere, SPACE5, budget=30, method=panel, allocate='greedy')

@@ -209,7 +209,7 @@ Notes:
 | `auto` | `cmaes` below 20 parameters, `rlcma` from 20 up; `gp` up to 200 parameters if you pass `expensive=True` | |
 | `[...]` | any list of methods = your own panel: the budget is split across them and the best is kept | |
 | your name | anything you added with `register()`: a policy you fine-tuned with `train()`, or a function such as grid search | |
-| `panel` | the default panel: `rlcma`, `walker_hp`, `cmaes` | when you don't know the landscape |
+| `panel` | the default panel: `rlcma`, `walker_hp`, `cmaes` | when you don't know the landscape; `allocate="race"` gives the better methods more of the budget, `allocate="each"` gives every method all of it |
 
 Any method also takes `warmup=f`. It spends that fraction of the budget on Latin-hypercube points first, and
 those points count toward the budget and appear in the history. The walkers then start from the best 4 points
@@ -234,8 +234,16 @@ Nevergrad NGOpt is in progress.
 - **Categorical parameters** are one coordinate split into equal bins. That's fine for a few choices, but
   unordered categoricals with many choices are a known weak spot.
 - **1-parameter searches** with the CMA-based methods add an ignored dummy coordinate, because pycma needs 2+.
-- The `panel` budget is split equally, with no racing between methods. `minimize(..., n_jobs=3)` runs the
-  methods at the same time, in threads, with the same result. That helps when your function spends its time
+- **How a panel shares compute** (`allocate=`):
+  - `"split"` (default): the budget is split equally, so a panel costs the same as one method.
+  - `"each"`: every method gets the whole budget, and the best result is kept. It's never worse than the panel's
+    best method, but it costs `len(panel) x budget` evaluations. With `n_jobs`, the wall-clock time is the same as
+    one method's.
+  - `"race"`: successive halving. All methods start with an equal slice, the worse half is dropped after each
+    round, and the survivors share the rest, so the better methods get more of the budget (3 methods, budget 200:
+    the winner gets about 123). The first round is short, so it favors methods that start fast, and on a flat
+    objective where nothing has scored yet it can't tell methods apart. `result.allocation` shows who got what.
+- `minimize(..., n_jobs=3)` runs a panel's methods at the same time, in threads, with the same result. That helps when your function spends its time
   outside Python (torch, jax, a subprocess, a remote job), and it must be safe to call from several threads.
 
 ## Tests

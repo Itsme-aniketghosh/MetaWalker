@@ -16,4 +16,4 @@ from .train import TrainedPolicy, train
 __all__ = ['minimize', 'register', 'minimize_auto', 'recommend', 'Recommendation', 'certify', 'Certified', 'importance',
            'Importance', 'compare', 'Comparison', 'train', 'TrainedPolicy', 'AskTell', 'Result', 'METHODS',
            'make_problem', 'TestProblem', 'FAMILIES', 'Space', 'Float', 'Int', 'Categorical']
-__version__ = '0.2.5'
+__version__ = '0.2.6'

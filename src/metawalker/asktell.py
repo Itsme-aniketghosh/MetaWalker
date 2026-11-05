@@ -30,8 +30,8 @@ _FINISHED = object()
 
 
 class AskTell:
-    def __init__(self, space, budget, method='auto', maximize=False, seed=None):
-        self.budget = budget
+    def __init__(self, space, budget, method='auto', maximize=False, seed=None, **minimize_kw):
+        self.budget, self._kw = budget, minimize_kw  # e.g. warmup, cache: passed on to minimize()
         self._asks, self._tells = queue.Queue(), queue.Queue()
         self._closed = False
         self._pending = None     # trial id handed out by ask() and not yet told
@@ -54,7 +54,7 @@ class AskTell:
 
     def _run(self, *args):
         try:
-            self._result = minimize(self._fn, *args)
+            self._result = minimize(self._fn, *args, **self._kw)
         except _Closed:
             pass
         except BaseException as e:  # surfaced in the caller's thread by _advance()
@@ -126,6 +126,55 @@ class AskTell:
             self.close()
         except Exception:
             pass
+
+
+def race(fn, space, budget, methods, maximize, seeds, n_jobs=1, **minimize_kw):
+    """minimize(method=[...], allocate='race'): successive halving across methods. Every method starts with an equal
+    slice; after each round the worse half (by best value so far) is dropped and the survivors split the next slice,
+    so the better methods get more of the budget. Each method plans for the whole budget, since it may win it all,
+    and is paused, not restarted, between rounds. Ties (e.g. nothing found yet on a flat objective) keep the
+    earlier-listed method. Returns (best_params, best_value, evaluations per method, history per method)."""
+    k = len(methods)
+    rounds = math.ceil(math.log2(k)) + 1 if k > 1 else 1
+    sign = -1.0 if maximize else 1.0
+    opts = [AskTell(space, budget, m, maximize, s, **minimize_kw) for m, s in zip(methods, seeds)]
+    best, hist = [math.inf] * k, [[] for _ in range(k)]
+
+    def step(i, n):
+        for _ in range(n):
+            if opts[i].done:
+                return
+            tid, params = opts[i].ask()
+            try:
+                v = float(fn(params))
+            except Exception:  # a failed configuration, as in minimize()
+                v = math.nan
+            opts[i].tell(tid, v)
+            hist[i].append((params, v))
+            if math.isfinite(v) and sign * v < best[i]:
+                best[i] = sign * v
+
+    alive = list(range(k))
+    try:
+        for r in range(rounds):
+            left = budget - sum(map(len, hist))
+            slice_ = left // (rounds - r) if r < rounds - 1 else left  # the last round gets everything left
+            shares = [slice_ // len(alive) + (1 if j < slice_ % len(alive) else 0) for j in range(len(alive))]
+            if n_jobs > 1 and len(alive) > 1:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(min(n_jobs, len(alive))) as ex:
+                    list(ex.map(step, alive, shares))
+            else:
+                for i, n in zip(alive, shares):
+                    step(i, n)
+            if r < rounds - 1:
+                alive = sorted(alive, key=lambda i: (best[i], i))[:math.ceil(len(alive) / 2)]
+    finally:
+        for o in opts:
+            o.close()
+    flat = [(params, v) for h in hist for params, v in h if math.isfinite(v)]
+    top = min(flat, key=lambda pv: sign * pv[1]) if flat else (None, math.nan)
+    return top[0], top[1], {m: len(h) for m, h in zip(methods, hist)}, hist
 
 
 try:
