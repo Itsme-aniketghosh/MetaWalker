@@ -15,7 +15,10 @@ def cmaes(prob, rng, theta=None, cfg=None, rule=False, x0=None, sigma0=0.25, inj
     P = unpack(theta, cfg) if theta is not None else None
     popsize, default_pop = None, 4 + int(3 * np.log(prob.n))
     while prob.evals < prob.budget:  # IPOP restarts
-        opts = {'bounds': [0, 1], 'seed': int(rng.integers(1, 2 ** 31)), 'verbose': -9,
+        seed = int(rng.integers(1, 2 ** 31))
+        # a private RandomState with pycma's own seeding: the same samples as np.random.seed(seed) + np.random.randn,
+        # without sharing numpy's global generator, so two CMA-ES runs in parallel threads don't interleave draws
+        opts = {'bounds': [0, 1], 'seed': seed, 'randn': np.random.RandomState(seed).randn, 'verbose': -9,
                 'maxfevals': prob.budget - prob.evals}
         if popsize: opts['popsize'] = popsize
         es = cma.CMAEvolutionStrategy(rng.uniform(0, 1, prob.n) if x0 is None else x0, sigma0, opts)

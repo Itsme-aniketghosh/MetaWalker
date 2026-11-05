@@ -110,7 +110,7 @@ def test_parallel_panel_gives_the_same_result_from_several_threads():
         threads.add(threading.get_ident()); time.sleep(0.001)
         return sphere(p)
 
-    panel = ['walker', 'cmaes', 'random']
+    panel = ['rlcma', 'walker', 'cmaes']  # two CMA-based methods: pycma must not share numpy's global generator
     seq = minimize(slow_sphere, SPACE5, budget=90, method=panel, seed=0)
     threads.clear()
     par = minimize(slow_sphere, SPACE5, budget=90, method=panel, seed=0, n_jobs=3)
