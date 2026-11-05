@@ -8,13 +8,15 @@ certified result (winner's-curse check).
 Methods: random, cmaes, tpe, optuna_gp, smac, walker_hand_cov, rl:VARIANT:SEED (a trained benchmark policy; add
 ':warm' to start from the best points of a 20% Latin-hypercube warm-up), handoff:VARIANT:SEED (walker 30%, then
 CMA-ES), cmawalk:VARIANT:SEED (CMA-ES 50%, then walkers), rlbo:sK, ns:METHOD (any metawalker.minimize method), and
-panel (the package's default panel: the budget split equally across metawalker.api.PANEL).
+panel (the package's default panel: the budget split equally across metawalker.api.PANEL, run in turn), and
+panel:K (member K of that panel alone, so the members run as parallel jobs; then `combine` certifies the search).
 Options (env): HP_REEVAL re-measurement seeds (10); HP_FREE=1 structural rejections cost no budget; HP_CACHE=1
 re-proposed levels are free; HP_GRID / HP_STRAT walker grid moves / Latin-hypercube jumps; HP_CERT10 certify every
 tie at the top; HP_EXPLORE / HP_ACCEPT forced walker exploration. Files go to $NAV_OUT/runs.
 
 Usage: python -m experiments.honeypot.search SPACE METHOD SEARCH_SEED [BUDGET]   (SPACE: 4 | many | 4h | manyh)
        -> runs/<space>_<method>_s<seed>.jsonl + .json
+       python -m experiments.honeypot.search combine SPACE SEARCH_SEED   (after panel:0..2 -> runs/<space>_panel_s<seed>.json)
        python -m experiments.honeypot.search train TASK [GENS PAIRS]   (hpfam_* / hpx_* variants: benchmark.TRAIN_TASKS)
 """
 import json, os, sys, time
@@ -56,10 +58,11 @@ def hpfam_instances(rng, k, budget=nb.BUDGET, fns=None, budgets=None):
 
 
 TRAINING = sys.argv[1:2] == ['train']
+COMBINE = sys.argv[1:2] == ['combine']  # reads the members' summaries only: no PPO, no jax
 if TRAINING:  # at module level: spawn-started Pool workers re-run this file as __mp_main__ and need HP_FRAC too
     problems.HP_FRAC, nb.train_instances = nb.HPFAM_FRAC, hpfam_instances
     problems.HP_TRIALS = nb.VARIANTS[nb.TRAIN_TASKS[int(sys.argv[2])][0]].get('hp_trials', problems.HP_TRIALS)
-else:
+elif not COMBINE:
     from experiments.honeypot import env as E  # jax: kept out of the training processes, which fork a pool
 
 
@@ -88,6 +91,8 @@ class HoneypotProblem(MeanBest):
         if GRID and space in ('many', 'manyh'):
             self.grid = level_grid(space)
         self.log, self.hist = log, []
+
+    offset = 0  # panel:K members start at their share's place in the panel, so PPO seeds match the sequential panel
 
     free = 0  # HP_FREE=1: levels failing the structural checks (no PPO run) cost no budget, up to FREE_CAP x budget
 
@@ -120,7 +125,7 @@ class HoneypotProblem(MeanBest):
             y = self.obs[k][0] / self.obs[k][1]
             self.log.write(json.dumps(dict(x=[float(v) for v in x], y=y, eval=self.evals, cached=True, free=True)) + '\n')
             return y
-        r = E.evaluate(x, seed=1_000_003 * self.seed + self.evals + 1, space=self.space)  # fresh PPO seeds each eval
+        r = E.evaluate(x, seed=1_000_003 * self.seed + self.offset + self.evals + 1, space=self.space)  # fresh PPO seeds each eval
         y = 1.0 - r['exploit'] if r['valid'] else (r.get('penalty') or INVALID)
         free = FREE and not r['valid'] and r['reason'] != PPO_REJECT and self.free < FREE_CAP * self.budget
         self.free += free
@@ -168,6 +173,33 @@ def run_panel(prob, rng, methods):
         _run(m, Share(prob, share), np.random.default_rng(int(rng.integers(2 ** 31))))
 
 
+def panel_member(budget, rng, k):
+    """(method, share, offset, seed) of member k of metawalker.api.PANEL: the same split and seeds as run_panel."""
+    from metawalker.api import PANEL
+    shares = [budget // len(PANEL) + (1 if i < budget % len(PANEL) else 0) for i in range(len(PANEL))]
+    seeds = [int(rng.integers(2 ** 31)) for _ in PANEL]
+    return PANEL[k], shares[k], sum(shares[:k]), seeds[k]
+
+
+def combine_panel(space, search_seed):
+    """One panel search from its members' runs, certified as run() certifies a single search: the CERT_TOP best
+    candidates by search score over all members, then the best of those on the re-measurements. Every member
+    re-measured its own top CERT_TOP on the same fresh seeds, so the overall top CERT_TOP are already measured."""
+    from metawalker.api import PANEL
+    out = HERE / 'runs'
+    parts = [json.load(open(out / f'{space}_panel-{k}_s{search_seed}.json')) for k in range(len(PANEL))]
+    pool = [dict(t, member=PANEL[k]) for k, p in enumerate(parts) for t in p['cert_table']]
+    top = sorted(pool, key=lambda t: -t['search_exploit'])[:CERT_TOP]  # stable: ties keep member order, then rank
+    cert = max(top, key=lambda t: t['reeval_exploit'])
+    summary = dict(space=space, method='panel', seed=search_seed, budget=sum(p['budget'] for p in parts),
+                   reeval_seeds=parts[0]['reeval_seeds'], search_exploit=max(p['search_exploit'] for p in parts),
+                   cert_exploit=cert['reeval_exploit'], cert_member=cert['member'], cert_params=cert['params'],
+                   members={PANEL[k]: p['cert_exploit'] for k, p in enumerate(parts)},
+                   sec=max(p['sec'] for p in parts), cert_table=top)
+    json.dump(summary, open(out / f'{space}_panel_s{search_seed}.json', 'w'), indent=1)
+    print(json.dumps({k: v for k, v in summary.items() if k != 'cert_table'}))
+
+
 def remeasure(x, space, seeds):
     rs = [E.evaluate(x, seed=s, space=space) for s in seeds]
     return rs, float(np.mean([r['exploit'] if r['valid'] else 0.0 for r in rs]))
@@ -178,8 +210,12 @@ def run(space, method, search_seed, budget):
     stem = out / f"{space}_{method.replace(':', '-')}_s{search_seed}"
     rng = np.random.default_rng(search_seed + 1)
     t0 = time.time()
+    if method.startswith('panel:'):
+        member, budget, offset, member_seed = panel_member(budget, rng, int(method.split(':')[1]))
     with open(f'{stem}.jsonl', 'w') as log:
         prob = HoneypotProblem(space, search_seed, budget, log)
+        if method.startswith('panel:'):
+            prob.offset = offset
         if method.startswith('rl:'):
             pol = method.removesuffix(':warm')
             cfg = nb.VARIANTS[pol.split(':')[1]]
@@ -201,6 +237,9 @@ def run(space, method, search_seed, budget):
         elif method == 'panel':
             from metawalker.api import PANEL
             run_panel(prob, rng, PANEL)
+        elif method.startswith('panel:'):
+            from metawalker.api import _run
+            _run(member, prob, np.random.default_rng(member_seed))
         elif method == 'walker_hand_cov': navigate(prob, rng, hand_beta=1.0, hand_kappa=1.0)
         elif method == 'optuna_gp':  # no time cap: a PPO evaluation costs far more than the GP's own overhead
             optuna_search(prob, rng, 'gp')
@@ -239,5 +278,7 @@ if __name__ == '__main__':
         variant, seed = nb.TRAIN_TASKS[int(sys.argv[2])]
         assert variant in nb.HPFAM, f'task {sys.argv[2]} is {variant}: train other variants with experiments.benchmark'
         nb.train(variant, seed, *(int(a) for a in sys.argv[3:]))
+    elif COMBINE:
+        combine_panel(sys.argv[2], int(sys.argv[3]))
     else:
         run(sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]) if len(sys.argv) > 4 else 300)
