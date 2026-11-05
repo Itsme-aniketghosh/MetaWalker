@@ -1,0 +1,83 @@
+{
+ "space": "manyh",
+ "method": "panel",
+ "seed": 3,
+ "budget": 200,
+ "reeval_seeds": 10,
+ "search_exploit": 1.0,
+ "cert_exploit": 0.9799348298163622,
+ "cert_member": "rlcma",
+ "cert_params": {
+  "lr": 0.00012860367296851845,
+  "ent": 0.06735690958763683,
+  "gamma": 0.9836636834302308,
+  "lam": 0.8187199545876553,
+  "clip": 0.10042472914362688,
+  "terminal_visible": false,
+  "honest_len": 11,
+  "terminal_dist": 11,
+  "wall_frac": 0.2077922077922078
+ },
+ "members": {
+  "rlcma": 0.9799348298163622,
+  "walker_hp": 0.0,
+  "cmaes": 0.9593320035479278
+ },
+ "sec": 11848.798210859299,
+ "cert_table": [
+  {
+   "rank": 0,
+   "search_exploit": 1.0,
+   "reeval_exploit": 0.8575757186682118,
+   "params": {
+    "lr": 0.00019726840693813123,
+    "ent": 0.012113224565302484,
+    "gamma": 0.9062427838015595,
+    "lam": 0.8000543740542326,
+    "clip": 0.17920204017158695,
+    "terminal_visible": false,
+    "honest_len": 11,
+    "terminal_dist": 13,
+    "wall_frac": 0.17532467532467533
+   },
+   "reeval_valid": 1.0,
+   "member": "rlcma"
+  },
+  {
+   "rank": 1,
+   "search_exploit": 1.0,
+   "reeval_exploit": 0.62,
+   "params": {
+    "lr": 0.00010224543822415245,
+    "ent": 0.014170393386660162,
+    "gamma": 0.989617132899886,
+    "lam": 0.8304773866953379,
+    "clip": 0.1230331747680842,
+    "terminal_visible": false,
+    "honest_len": 11,
+    "terminal_dist": 11,
+    "wall_frac": 0.19480519480519481
+   },
+   "reeval_valid": 0.7,
+   "member": "rlcma"
+  },
+  {
+   "rank": 2,
+   "search_exploit": 0.9997830802603037,
+   "reeval_exploit": 0.9799348298163622,
+   "params": {
+    "lr": 0.00012860367296851845,
+    "ent": 0.06735690958763683,
+    "gamma": 0.9836636834302308,
+    "lam": 0.8187199545876553,
+    "clip": 0.10042472914362688,
+    "terminal_visible": false,
+    "honest_len": 11,
+    "terminal_dist": 11,
+    "wall_frac": 0.2077922077922078
+   },
+   "reeval_valid": 1.0,
+   "member": "rlcma"
+  }
+ ]
+}

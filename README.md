@@ -155,14 +155,17 @@ of each search's top 3 levels, re-measured on 10 fresh PPO seeds. Keeping the be
 | Method | Certified | Fresh |
 |---|---|---|
 | panel: rlbo + CMA-ES + walker, each with the full budget (3x compute), best certified level kept | 0.96 | **0.88** |
+| panel: RL-CMA + walker + CMA-ES sharing one budget (5 searches), best certified level kept | 0.95 | **0.90** |
 | **rlbo** (3 policies, 15 searches) | 0.88 | **0.79** |
 | CMA-ES (10 searches) | 0.76 | 0.70 |
 | walker with jump / re-check + level cache | 0.69 | 0.68 |
 | Optuna GP | 0.55 | 0.49 |
 
-With 5 to 15 searches per method, only rlbo vs GP and the panel vs CMA-ES are clear of the noise (95% bootstrap
-intervals of the fresh-seed gaps: rlbo − CMA-ES −0.08 to +0.27, rlbo − GP −0.02 to +0.61, panel − CMA-ES +0.01 to
-+0.34).
+With 5 to 15 searches per method, only the two panels vs CMA-ES are clear of the noise (95% bootstrap intervals of
+the fresh-seed gaps: full-budget panel − CMA-ES +0.01 to +0.34, shared-budget panel − CMA-ES +0.05 to +0.36,
+shared-budget panel − rlbo 0.00 to +0.23, rlbo − CMA-ES −0.08 to +0.27, rlbo − GP −0.02 to +0.61). The shared-budget
+panel is the old trio; the package default now uses rlbo in place of the walker
+(`results/honeypot/round_K`, `recheck_split`).
 
 ### What the policies learned (`results/analysis/policy_report.md`)
 

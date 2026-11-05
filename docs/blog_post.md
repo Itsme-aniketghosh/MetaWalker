@@ -7,12 +7,12 @@
 - [Reward-hacking](https://lilianweng.github.io/posts/2024-11-28-reward-hacking/) honeypots, environments where cheating pays exactly as well as doing the task, are mostly built by hand. I treated finding them as black-box search over 169 parameters (walls, object positions, PPO hyperparameters), scored by how often PPO takes a shortcut I planted.
 - Rather than tune an existing optimizer, I trained one with [evolution strategies](https://arxiv.org/abs/1703.03864) on cheap synthetic functions and ran it on the honeypot without retraining.
 - At equal PPO budget, my best learned optimizer (rlbo) found levels where PPO cheats 79% of the time, scored on PPO seeds that played no part in picking them. [CMA-ES](https://arxiv.org/abs/1604.00772) got 70% and GP [Bayesian optimization](https://arxiv.org/abs/1807.02811) 49%. With 5 to 15 searches per method, the gap to CMA-ES could still be noise.
-- Running rlbo, CMA-ES and the walker side by side, each with the full budget, and keeping the best level did better still: 88%, at 3× the PPO compute.
+- Running several optimizers and keeping the best level did better still. Splitting one 200-run budget between RL-CMA, CMA-ES and the walker scored 90%, at the same PPO compute as one search. Giving rlbo, CMA-ES and the walker the full budget each scored 88%, at 3× the compute.
 - My learned walker gets to its first strong level in a median of 6 PPO runs, against 17 for CMA-ES and 46 for BO. Its final levels are weaker than rlbo's, though.
 - Nothing I tried wins everywhere. The walker only ties CMA-ES on final quality, and the learned edge shrinks as the landscape gets flatter.
 - **Try it:** [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) (runs in a few minutes, no setup) · `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)).
 
-*Epistemic status: course project. One toy environment, 5 to 15 searches per method. The ranking holds on fresh PPO seeds, but most gaps are inside the noise. I'd bet on rlbo beating GP BO and on the full-budget panel beating CMA-ES; the rest is suggestive.*
+*Epistemic status: course project. One toy environment, 5 to 15 searches per method. The ranking holds on fresh PPO seeds, but most gaps are inside the noise. I'd bet on rlbo beating GP BO and on both panels beating CMA-ES; the rest is suggestive.*
 
 ## Honeypots are still built by hand, one at a time
 
@@ -56,9 +56,9 @@ I built three learned optimizers, all trained with ES:
 
 I gave every method 200 evaluated levels per search and ran 5 searches each. There's a trap here, and I walked into it twice. In a noisy search, the best score you *observed* is biased upward, because the winner is partly just the luckiest draw. So I retrained each search's top 3 levels on 10 fresh PPO seeds and kept the best. But keeping the best of 3 is a small winner's curse of its own: those scores came out about 0.08 too high. The numbers below come from one more step: the chosen level, retrained on 10 brand-new seeds that played no part in choosing it.
 
-![Dot plot of the exploit rate each search achieved on brand-new PPO seeds: a panel with 3x the budget averages 0.88, rlbo 0.79, CMA-ES 0.70, the walker 0.68 and GP Bayesian optimization 0.49](figures/honeypot_results.png)
+![Dot plot of the exploit rate each search achieved on brand-new PPO seeds: a panel with 3x the budget averages 0.88, a panel sharing one budget 0.90, rlbo 0.79, CMA-ES 0.70, the walker 0.68 and GP Bayesian optimization 0.49](figures/honeypot_results.png)
 
-*Each dot is one search, scored on 10 PPO seeds that played no part in choosing the level. Black line is the mean. The top row uses 3× the PPO budget; see the panel section below.*
+*Each dot is one search, scored on 10 PPO seeds that played no part in choosing the level. Black line is the mean. The top row uses 3× the PPO budget; the second shares one budget between three methods. See the panel section below.*
 
 Could that be one lucky training run? I trained three rlbo policies independently, and all three beat CMA-ES on average (0.75, 0.80 and 0.83, against 0.70). Search by search it's closer than the averages suggest, though: on the same search seed, rlbo beat CMA-ES in 17 of 30 pairings. With this few searches, a gap of 0.09 could still be noise. The gap to GP BO, 0.30, is the one I'd bet on.
 
@@ -128,9 +128,9 @@ So which one should you use? It depends on what you care about. rlbo ends with t
 
 Does that actually help? On the honeypot I tried two versions. Giving rlbo, CMA-ES and the walker the full 200 PPO runs each, and keeping the best level, was the strongest result in this post: 88% on brand-new seeds, against 79% for rlbo alone. It was at least as good as rlbo in 13 of 15 searches, and most of the gain came from searches where rlbo's pick was weak and CMA-ES had found something solid. The catch is 3× the PPO compute, though in parallel it takes the same wall-clock time as one search.
 
-[RESULT PENDING: equal-split panel, one 200-run budget shared three ways]
+The other version shares one 200-run budget: RL-CMA, CMA-ES and the walker get about 67 PPO runs each, and I keep the member level with the best certified score. I expected it to land somewhere below rlbo. It scored 90% on brand-new seeds instead, level with the 3× panel and ahead of rlbo alone at the same compute. Most of that is RL-CMA, which scored 82% by itself on a third of the budget, with CMA-ES finding the better level on two of the five searches. The walker added nothing: its pick scored zero in 3 of the 5 searches. Five searches is not many. The gap to CMA-ES (+0.20, 95% bootstrap interval +0.05 to +0.36) looks real, but the gap to rlbo (+0.11, interval 0.00 to +0.23) starts right at zero, so I wouldn't lean on it yet.
 
-Isn't splitting the budget wasteful? It can be. Each method gets only part of the budget, and when the signal is rare that hurts. On a mix of flat and smooth test problems, the warmed-up walker alone reached the target on 11 of 15 runs, while a two-method panel with half the budget each reached it on 3. That's why I added `compare()`. It runs candidate methods on your own losses, reports how often and how fast each one gets there, and suggests a panel, which is sometimes a single method with the whole budget.
+Isn't splitting the budget wasteful? Not here, but it can be. Each method gets only part of the budget, and when the signal is rare that hurts. On a mix of flat and smooth test problems, the warmed-up walker alone reached the target on 11 of 15 runs, while a two-method panel with half the budget each reached it on 3. That's why I added `compare()`. It runs candidate methods on your own losses, reports how often and how fast each one gets there, and suggests a panel, which is sometimes a single method with the whole budget.
 
 All of this is in my package, `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)). `method="panel"` runs rlbo, RL-CMA and CMA-ES; after these runs I dropped the walker from the default, since without its warm-up it was the weakest member. By default the panel splits the budget. `allocate="each"` gives every method the full budget, and `allocate="race"` starts them all and moves the budget to whichever is doing best (successive halving), which I haven't tested on the honeypot. You can also register your own optimizers alongside the built-in ones, or fine-tune the learned ones on cheap problems shaped like yours.
 

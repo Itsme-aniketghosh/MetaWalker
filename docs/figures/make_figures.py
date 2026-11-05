@@ -57,20 +57,34 @@ def fresh(prefix):
     out = []
     for f in sorted(HP.glob('recheck_*/recheck_*.json')):
         d = json.load(open(f))
-        out += [d['exploit'] for k in d['key'] if k.replace(chr(92), '/').startswith(prefix)]  # keys from Windows paths
+        keys = d['key'] if isinstance(d['key'], list) else [d['key']]
+        out += [d['exploit'] for k in keys if k.replace(chr(92), '/').startswith(prefix)]  # keys from Windows paths
     return out
+
+
+def split_panel():
+    """Equal-split panel (rlcma + walker_hp + CMA-ES, 1/3 budget each): per search, the member level with the best
+    certified score, scored on brand-new seeds."""
+    man = json.load(open(HP / 'recheck_split' / 'manifest.json'))
+    fr = {json.load(open(f))['key']: json.load(open(f))['exploit'] for f in (HP / 'recheck_split').glob('recheck_*.json')}
+    best = {}
+    for it in man:
+        if it['seed'] not in best or it['cert'] > best[it['seed']]['cert']:
+            best[it['seed']] = it
+    return [fr[best[s]['key']] for s in sorted(best)]
 
 
 def fig_honeypot():
     rows = [('Panel, 3x budget (15)', fresh('panel:'), '#86b6ef'),  # rlbo + CMA-ES + walker, each the full budget
+            ('Panel, same budget (5)', split_panel(), '#86b6ef'),
             ('rlbo (15)', [v for p in ('s0', 's1', 's2') for v in fresh(f'rlbo:{p}|')], BLUE),
             ('CMA-ES (10)', fresh('cmaes|'), GRAY),
             ('Walker (5)', fresh('walker|'), GRAY),
             ('GP Bayesian opt. (5)', fresh('gp|'), GRAY)]
-    assert [len(r[1]) for r in rows] == [15, 15, 10, 5, 5], [len(r[1]) for r in rows]
-    fig, ax = plt.subplots(figsize=(7.5, 4.2))
+    assert [len(r[1]) for r in rows] == [15, 5, 15, 10, 5, 5], [len(r[1]) for r in rows]
+    fig, ax = plt.subplots(figsize=(7.5, 4.6))
     dot_rows(ax, rows, 'Exploit rate of the chosen level on 10 brand-new PPO seeds')
-    ax.set_title('Stronger honeypots, scored on brand-new PPO seeds')
+    ax.set_title('Honeypots scored on brand-new PPO seeds')
     fig.tight_layout(); fig.savefig(OUT / 'honeypot_results.png', dpi=200); plt.close(fig)
 
 
