@@ -7,7 +7,8 @@ certified result (winner's-curse check).
 
 Methods: random, cmaes, tpe, optuna_gp, smac, walker_hand_cov, rl:VARIANT:SEED (a trained benchmark policy; add
 ':warm' to start from the best points of a 20% Latin-hypercube warm-up), handoff:VARIANT:SEED (walker 30%, then
-CMA-ES), cmawalk:VARIANT:SEED (CMA-ES 50%, then walkers), rlbo:sK, and ns:METHOD (any metawalker.minimize method).
+CMA-ES), cmawalk:VARIANT:SEED (CMA-ES 50%, then walkers), rlbo:sK, ns:METHOD (any metawalker.minimize method), and
+panel (the package's default panel: the budget split equally across metawalker.api.PANEL).
 Options (env): HP_REEVAL re-measurement seeds (10); HP_FREE=1 structural rejections cost no budget; HP_CACHE=1
 re-proposed levels are free; HP_GRID / HP_STRAT walker grid moves / Latin-hypercube jumps; HP_CERT10 certify every
 tie at the top; HP_EXPLORE / HP_ACCEPT forced walker exploration. Files go to $NAV_OUT/runs.
@@ -143,6 +144,30 @@ def run_warm_policy(prob, rng, theta, cfg):
         cmaes(prob, rng, theta, cfg, x0=X[0])
 
 
+class Share:
+    """One panel member's view of the search: its own share of the budget, on the shared problem (same history,
+    cache and certification pool), as metawalker.minimize(method='panel') gives each method a share."""
+
+    def __init__(self, prob, budget):
+        self.prob, self.budget, self.start = prob, budget, prob.evals
+
+    evals = property(lambda self: self.prob.evals - self.start)
+
+    def __call__(self, x):
+        return self.prob(x) if self.evals < self.budget else np.inf
+
+    def __getattr__(self, name):  # n, best_x, stats, recheck, ...: the shared problem's
+        return getattr(self.prob, name)
+
+
+def run_panel(prob, rng, methods):
+    """Equal split, no racing, each method seeded from rng: metawalker.minimize's panel, on the honeypot."""
+    from metawalker.api import _run
+    for i, m in enumerate(methods):
+        share = prob.budget // len(methods) + (1 if i < prob.budget % len(methods) else 0)
+        _run(m, Share(prob, share), np.random.default_rng(int(rng.integers(2 ** 31))))
+
+
 def remeasure(x, space, seeds):
     rs = [E.evaluate(x, seed=s, space=space) for s in seeds]
     return rs, float(np.mean([r['exploit'] if r['valid'] else 0.0 for r in rs]))
@@ -173,6 +198,9 @@ def run(space, method, search_seed, budget):
         elif method.startswith('ns:'):  # the metawalker package's optimizers, e.g. walker_hp_warm, cmaes_rule
             from metawalker.api import _run
             _run(method[3:], prob, rng)
+        elif method == 'panel':
+            from metawalker.api import PANEL
+            run_panel(prob, rng, PANEL)
         elif method == 'walker_hand_cov': navigate(prob, rng, hand_beta=1.0, hand_kappa=1.0)
         elif method == 'optuna_gp':  # no time cap: a PPO evaluation costs far more than the GP's own overhead
             optuna_search(prob, rng, 'gp')
