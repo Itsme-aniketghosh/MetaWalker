@@ -120,7 +120,7 @@ On my 95%-flat family, the learned walkers beat CMA-ES on 91% of problems from 2
 
 *Share of problems (20 to 500 dims, 5 seeds, with and without noise) where a learned walker beat CMA-ES, pooled over three walkers. Black lines are 95% CIs.*
 
-The fix that helped most was also the least clever: spend the first 20% of the budget on random ([Latin hypercube](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.qmc.LatinHypercube.html)) samples, then hand over to the walker. On a 50-dimensional plateau, the warmed-up walker found the pocket in 13 of 20 runs. CMA-ES found it in 2, random search in none.
+The fix that helped most was simple: spend the first 20% of the budget on random ([Latin hypercube](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.qmc.LatinHypercube.html)) samples, then hand over to the walker. On a 50-dimensional plateau, the warmed-up walker found the pocket in 13 of 20 runs. CMA-ES found it in 2, random search in none.
 
 ## No method wins everywhere, so the package runs a panel
 
