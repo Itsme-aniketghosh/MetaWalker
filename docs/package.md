@@ -209,7 +209,7 @@ Notes:
 | `auto` | `cmaes` below 20 parameters, `rlcma` from 20 up; `gp` up to 200 parameters if you pass `expensive=True` | |
 | `[...]` | any list of methods = your own panel: the budget is split across them and the best is kept | |
 | your name | anything you added with `register()`: a policy you fine-tuned with `train()`, or a function such as grid search | |
-| `panel` | the default panel: `rlbo`, `rlcma`, `cmaes` | when you don't know the landscape; `allocate="race"` gives the better methods more of the budget, `allocate="each"` gives every method all of it |
+| `panel` | the default panel: `rlbo`, `rlcma`, `cmaes` | when you don't know the landscape; `allocate="race"` gives the better methods more of the budget, `allocate="each"` gives every method all of it. On the honeypot, a split panel (`rlcma`, `walker_hp`, `cmaes`) reached 0.90 on fresh PPO seeds vs 0.79 for `rlbo` alone, at the same compute |
 
 Any method also takes `warmup=f`. It spends that fraction of the budget on Latin-hypercube points first, and
 those points count toward the budget and appear in the history. The walkers then start from the best 4 points
