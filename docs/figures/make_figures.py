@@ -77,7 +77,7 @@ def split_panel():
 def fig_honeypot():
     rows = [('Panel, 3x budget (15)', fresh('panel:'), '#86b6ef'),  # rlbo + CMA-ES + walker, each the full budget
             ('Panel, same budget (5)', split_panel(), '#86b6ef'),
-            ('rlbo (15)', [v for p in ('s0', 's1', 's2') for v in fresh(f'rlbo:{p}|')], BLUE),
+            ('RLBO (15)', [v for p in ('s0', 's1', 's2') for v in fresh(f'rlbo:{p}|')], BLUE),
             ('CMA-ES (10)', fresh('cmaes|'), GRAY),
             ('Walker (5)', fresh('walker|'), GRAY),
             ('GP Bayesian opt. (5)', fresh('gp|'), GRAY)]
@@ -103,12 +103,12 @@ def fig_ablation():
 def fig_speed():
     # mean seconds per 1,000-evaluation run on the standard test functions (results/reports/rlbo.txt,
     # hpo_baselines.txt); SMAC hit the time cap on 55 of 360 runs, so its true cost is higher
-    rows = [('NGOpt', 16.7), ('rlbo', 23.0), ('CMA-ES', 35.2), ('RL-CMA', 35.5), ('TPE', 263.2),
+    rows = [('NGOpt', 16.7), ('RLBO', 23.0), ('CMA-ES', 35.2), ('RL-CMA', 35.5), ('TPE', 263.2),
             ('SMAC3', 3678.4), ('GP Bayesian opt.', 4296.4)]
     fig, ax = plt.subplots(figsize=(7.5, 3.6))
     for i, (label, sec) in enumerate(rows):
         y = len(rows) - 1 - i
-        ax.barh(y, sec, height=0.62, color=BLUE if label == 'rlbo' else GRAY, zorder=3)
+        ax.barh(y, sec, height=0.62, color=BLUE if label == 'RLBO' else GRAY, zorder=3)
         txt = f'{sec:,.0f} s' + (' (capped)' if label == 'SMAC3' else '')
         ax.text(sec * 1.12, y, txt, va='center', fontsize=10, color=INK)
     ax.set_xscale('log')

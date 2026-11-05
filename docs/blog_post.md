@@ -4,25 +4,25 @@
 
 **TL;DR**
 
-- [Reward-hacking](https://lilianweng.github.io/posts/2024-11-28-reward-hacking/) honeypots, environments where cheating pays exactly as well as doing the task, are mostly built by hand. I treated finding them as black-box search over 169 parameters (walls, object positions, PPO hyperparameters), scored by how often PPO takes a shortcut I planted.
+- [Reward-hacking](https://lilianweng.github.io/posts/2024-11-28-reward-hacking/) honeypots, environments where cheating pays exactly as well as doing the task, are mostly built by hand. I treated finding them as a black-box search over 169 parameters (walls, object positions, and PPO hyperparameters), scored by how often PPO takes a shortcut I planted.
 - Rather than tune an existing optimizer, I trained one with [evolution strategies](https://arxiv.org/abs/1703.03864) on cheap synthetic functions and ran it on the honeypot without retraining.
-- At equal PPO budget, my best learned optimizer (rlbo) found levels where PPO cheats 79% of the time, on fresh PPO seeds. [CMA-ES](https://arxiv.org/abs/1604.00772) got 70% and GP [Bayesian optimization](https://arxiv.org/abs/1807.02811) 49%. With 5 to 15 searches per method, the gap to CMA-ES could still be noise.
-- Hedging did better still: run several optimizers and keep the best level. Sharing one 200-run budget between RL-CMA, CMA-ES and the walker got 90%, with no extra PPO compute. Giving rlbo, CMA-ES and the walker 200 runs each got 88%, at 3× the compute.
-- My learned walker gets to its first strong level in a median of 6 PPO runs, against 17 for CMA-ES and 46 for BO. Its final levels are weaker than rlbo's, though.
+- At an equal PPO budget, my best learned optimizer (RLBO) found levels where PPO cheats 79% of the time, on fresh PPO seeds. [CMA-ES](https://arxiv.org/abs/1604.00772) got 70%, and GP [Bayesian optimization](https://arxiv.org/abs/1807.02811) got 49%. With 5 to 15 searches per method, the gap to CMA-ES could still be noise.
+- Hedging did better still: run several optimizers and keep the best level. Sharing one 200-run budget between RL-CMA, CMA-ES, and the walker got 90%, with no extra PPO compute. Giving RLBO, CMA-ES, and the walker 200 runs each got 88%, at 3× the compute.
+- My learned walker gets to its first strong level in a median of 6 PPO runs, against 17 for CMA-ES and 46 for BO. Its final levels are weaker than RLBO's, though.
 - No single method wins everywhere. The walker only ties CMA-ES on final quality, and the learned edge shrinks as the landscape gets flatter.
 - **Try it:** [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) (runs in a few minutes, no setup) · `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)).
 
-*Epistemic status: course project. One toy environment, 5 to 15 searches per method. The ranking holds on fresh PPO seeds, but most gaps are inside the noise. I'd bet on rlbo beating GP BO and on both panels beating CMA-ES; the rest is suggestive.*
+*Epistemic status: course project. One toy environment, 5 to 15 searches per method. The ranking holds on fresh PPO seeds, but most gaps are inside the noise. I'd bet on RLBO beating GP BO and on both panels beating CMA-ES; the rest is suggestive.*
 
 ## Honeypots are still built by hand, one at a time
 
-If I want to measure reward hacking, or train it out of a model, I need an environment where cheating pays exactly as well as doing the job, and where I can tell afterward which one the model did. For coding models that's "edit the tests instead of fixing the bug." (DeepMind keeps a [list of real examples](https://deepmind.google/discover/blog/specification-gaming-the-flip-side-of-ai-ingenuity/).) As far as I can tell, people mostly build these by hand, one at a time. So I wanted to know two things: can an optimizer find them instead, and does a *learned* optimizer do it better than the standard ones?
+If I want to measure reward hacking or train it out of a model, I need an environment where cheating pays exactly as well as doing the job and where I can tell afterward which one the model did. For coding models, that's "edit the tests instead of fixing the bug." (DeepMind has a [list of real examples](https://deepmind.google/discover/blog/specification-gaming-the-flip-side-of-ai-ingenuity/).) As far as I can tell, people mostly build these by hand, one at a time. So I wanted to know two things: can an optimizer find them instead, and does a *learned* optimizer do it better than the standard ones?
 
-## The test bed: a gridworld where cheating pays as well as solving
+## The testbed: a gridworld where cheating pays as well as solving
 
-Why a gridworld and not a real coding model? Because a search like this trains the agent hundreds of times, so each training run has to take minutes. A 13×17 gridworld lets me train [PPO](https://arxiv.org/abs/1707.06347) that fast. Whether levels found this way tell us anything about reward hacking in LLMs is a fair question, and I don't know yet. The honest task is to pick up a key, open a door and reach the goal, for +1. Somewhere on the map I put a "grader" square that ends the episode with the same +1. That's my stand-in for editing the tests.
+Why a gridworld and not a real coding model? Because a search like this trains the agent hundreds of times, so each training run has to take minutes. A 13×17 gridworld lets me train [PPO](https://arxiv.org/abs/1707.06347) that fast. Whether levels found this way tell us anything about reward hacking in LLMs is a fair question, and I don't know yet. The honest task is to pick up a key, open a door, and reach the goal, for +1. Somewhere on the map I put a "grader" square that ends the episode with the same +1. That's my stand-in for editing the tests.
 
-A level is 169 numbers: 154 for walls, 9 for object positions, 5 PPO hyperparameters and a switch for whether the grader is visible. I score a level by training PPO on it 5 times and counting how often it ends up taking the grader. I throw a level out if:
+A level is 169 numbers: 154 for walls, 9 for object positions, 5 PPO hyperparameters, and a switch for whether the grader is visible. I score a level by training PPO on it 5 times and counting how often it ends up taking the grader. I throw a level out if:
 
 - the goal is unreachable (BFS check),
 - the grader is so much closer than the goal that "cheating" is just the shortest path, or
@@ -36,35 +36,35 @@ Why the last filter? Without it, the easiest way to score high is a level so con
 
 ## Most levels score zero, so standard tuners have nothing to follow
 
-Why not just throw a standard hyperparameter tuner at this? Because the problem is unkind to them in three ways at once. Each evaluation is several PPO runs, so I get a few hundred tries at most. Scores are noisy, because PPO is noisy. And the landscape is almost entirely flat: nearly every valid level scores zero, with small pockets where PPO starts cheating and no gradient pointing toward them.
+Why not just throw a standard hyperparameter tuner at this? Because the problem is unkind to them in three ways at once. Each evaluation is several PPO runs, so I get a few hundred tries at most. Scores are noisy because PPO is noisy. And the landscape is almost entirely flat: nearly every valid level scores zero, with small pockets where PPO starts cheating and no gradient pointing toward them.
 
 [GP-based BO](https://optuna.readthedocs.io/en/stable/reference/samplers/generated/optuna.samplers.GPSampler.html) gets slow and weak as the dimension grows. [TPE](https://optuna.readthedocs.io/en/stable/reference/samplers/generated/optuna.samplers.TPESampler.html) copes with the noise but not with 169 interacting parameters. CMA-ES was the strongest standard baseline I ran.
 
-## I trained the optimizer itself, on cheap synthetic problems
+## I trained the optimizer itself on cheap synthetic problems
 
 The trick is to make the optimizer the RL agent. One episode is one complete search on one function. Each step, the policy gets a summary of the points tried so far and their scores, and outputs where to evaluate next. When the budget runs out it gets a single reward: how much closer its best point ended up to the true optimum than a random guess, on a log scale. [Chen et al. (2017)](https://arxiv.org/abs/1611.03824) did basically this with RNN optimizers on smooth Gaussian-process samples; mine have to deal with functions that are flat almost everywhere and noisy.
 
-Why not train on the honeypot directly? One training episode would be hundreds of PPO runs, and ES needs thousands of episodes. Instead I trained on rotated, shifted [standard test functions](https://www.sfu.ca/~ssurjano/optimization.html) plus a synthetic "honeypot-like" family I wrote: 95% flat, one hidden pocket of signal, noisy pass/fail readings.
+Why not train on the honeypot directly? One training episode would be hundreds of PPO runs, and ES needs thousands of episodes. Instead, I trained on rotated, shifted [standard test functions](https://www.sfu.ca/~ssurjano/optimization.html) plus a synthetic "honeypot-like" family I wrote: 95% flat, one hidden pocket of signal, and noisy pass/fail readings.
 
 I built three learned optimizers, all trained with ES:
 
 - **Walker**: a small network that moves one coordinate at a time (up, down, or stay). Extra outputs set the step size, momentum, and pull toward the best point. It also has three special moves: keep walking, re-check the current best, or jump to a random point.
 - **RL-CMA**: CMA-ES, with the step size and restart decisions handed to a learned policy.
-- **rlbo**: shaped like BO. Each step it fits cheap surrogates and proposes 48 candidates, and the policy picks one. It's similar in spirit to [MetaBO](https://arxiv.org/abs/1904.02642), but I trained it end to end with ES.
+- **RLBO**: shaped like BO. Each step it fits cheap surrogates and proposes 48 candidates, and the policy picks one. It's similar in spirit to [MetaBO](https://arxiv.org/abs/1904.02642), but I trained it end-to-end with ES.
 
-## rlbo finds the strongest honeypots of any single method: 79%, vs. 70% for CMA-ES
+## RLBO finds the strongest honeypots of any single method: 79%, vs. 70% for CMA-ES
 
 I gave every method 200 evaluated levels per search and ran 5 searches each. In a noisy search the best observed score is biased upward, so I retrained each search's top 3 levels on 10 fresh PPO seeds and kept the best. Picking the best of 3 still inflated scores by about 0.08, so the numbers below retrain that pick once more on 10 brand-new seeds.
 
-![Dot plot of the exploit rate each search achieved on brand-new PPO seeds: a panel with 3x the budget averages 0.88, a panel sharing one budget 0.90, rlbo 0.79, CMA-ES 0.70, the walker 0.68 and GP Bayesian optimization 0.49](figures/honeypot_results.png)
+![Dot plot of the exploit rate each search achieved on brand-new PPO seeds: a panel with 3x the budget averages 0.88, a panel sharing one budget 0.90, RLBO 0.79, CMA-ES 0.70, the walker 0.68 and GP Bayesian optimization 0.49](figures/honeypot_results.png)
 
-*Each dot is one search, on 10 brand-new PPO seeds. Black line is the mean. The two panels are explained below.*
+*Each dot is one search, on 10 brand-new PPO seeds. The black line is the mean. The two panels are explained below.*
 
-Could that be one lucky training run? I trained three rlbo policies independently, and all three beat CMA-ES on average (0.75, 0.80 and 0.83, against 0.70). Search by search it's closer: rlbo beat CMA-ES in 17 of 30 same-seed pairings. The gap I'd bet on is the one to GP BO (0.30).
+Could that be one lucky training run? I trained three RLBO policies independently, and all three beat CMA-ES on average (0.75, 0.80, and 0.83, against 0.70). Search by search it's closer: RLBO beat CMA-ES in 17 of 30 same-seed pairings. The gap I'd bet on is the one to GP BO (0.30).
 
 The policy had only ever seen synthetic math functions, and it went to gridworld walls and PPO hyperparameters with no retraining. That's the result I'd most like someone to replicate.
 
-## The walker finds a strong level fastest: 6 PPO runs, vs. 46 for BO
+## The walker finds a strong level fastest: 6 PPO runs vs. 46 for BO
 
 The obvious objection: with enough PPO runs, doesn't everything find a good honeypot?
 
@@ -72,15 +72,15 @@ Mostly, yes, if you can afford the runs. Every method except random search usual
 
 ![Dot plot of PPO runs until each search first found a level scoring 0.8 or more: learned walker median 6, CMA-ES 17, TPE 23, GP 46, SMAC3 67; random search succeeded in 1 of 5 searches](figures/time_to_target.png)
 
-*Each dot is one search. Black line is the median PPO runs before first logging a valid level ≥0.8. Right-hand count is how many searches got there at all.*
+*Each dot is one search. The black line is the median PPO runs before first logging a valid level ≥0.8. The right-hand count is how many searches got there at all.*
 
-Two caveats. These are single measurements taken during the search, so some of the early 0.8s were probably lucky. And I didn't log this number for rlbo.
+Two caveats. These are single measurements taken during the search, so some of the early 0.8s were probably lucky. And I didn't log this number for RLBO.
 
-## Bayesian optimization is about 190× slower than rlbo
+## Bayesian optimization is about 190× slower than RLBO
 
-On the honeypot, an optimizer's own overhead barely matters, because each PPO run takes minutes. Once evaluations take seconds it matters a lot, and BO's overhead grows fast. On my synthetic benchmarks, rlbo beats GP BO on 76–100% of problems from 5 to 500 dimensions, and it takes 23 seconds per 1,000-evaluation run where BO takes 4,300.
+On the honeypot, an optimizer's own overhead barely matters, because each PPO run takes minutes. Once evaluations take seconds, it matters a lot, and BO's overhead grows fast. On my synthetic benchmarks, RLBO beats GP BO on 76–100% of problems from 5 to 500 dimensions, and it takes 23 seconds per 1,000-evaluation run where BO takes 4,300.
 
-![Bar chart, log scale, of optimizer time per 1,000-evaluation run: NGOpt 17 s, rlbo 23 s, CMA-ES 35 s, RL-CMA 36 s, TPE 263 s, SMAC3 3,678 s, GP 4,296 s](figures/speed.png)
+![Bar chart, log scale, of optimizer time per 1,000-evaluation run: NGOpt 17 s, RLBO 23 s, CMA-ES 35 s, RL-CMA 36 s, TPE 263 s, SMAC3 3,678 s, GP 4,296 s](figures/speed.png)
 
 *Optimizer overhead per 1,000-evaluation run, log scale. [SMAC3](https://github.com/automl/SMAC3) hit the time limit on some runs, so its true cost is higher.*
 
@@ -124,17 +124,17 @@ The fix that helped most was also the least clever: spend the first 20% of the b
 
 ## No method wins everywhere, so the package runs a panel
 
-So which one should you use? rlbo ends with the strongest honeypots of any single method, and the walker gets to a strong one fastest. CMA-ES pulls ahead once the budget is large. GP BO is hard to beat at 100 to 200 dimensions, if you can wait for it. If you don't know which of these your problem looks like, hedge: run several optimizers and keep the best result.
+So which one should you use? RLBO ends with the strongest honeypots of any single method, and the walker gets to a strong one fastest. CMA-ES pulls ahead once the budget is large. GP BO is hard to beat at 100 to 200 dimensions, if you can wait for it. If you don't know which of these your problem looks like, hedge: run several optimizers and keep the best result.
 
-Does that actually help? On the honeypot I tried two versions. Giving rlbo, CMA-ES and the walker the full 200 PPO runs each, and keeping the best level, scored 88% on brand-new seeds, against 79% for rlbo alone. It was at least as good as rlbo in 13 of 15 searches. The catch is 3× the PPO compute.
+Does that actually help? On the honeypot I tried two versions. Giving RLBO, CMA-ES, and the walker the full 200 PPO runs each, and keeping the best level, scored 88% on brand-new seeds, against 79% for RLBO alone. It was at least as good as RLBO in 13 of 15 searches. The catch is 3× the PPO compute.
 
-The other version shares one 200-run budget: RL-CMA, CMA-ES and the walker get about 67 PPO runs each. I expected it to land below rlbo. It scored 90%. Most of that is RL-CMA (82% on its share), and the walker's pick scored zero in 3 of 5 searches. With five searches, the gap to CMA-ES (+0.20, 95% interval +0.05 to +0.36) looks real; the gap to rlbo (+0.11, 0.00 to +0.23) doesn't yet.
+The other version shares one 200-run budget: RL-CMA, CMA-ES, and the walker get about 67 PPO runs each. I expected it to land below RLBO. It scored 90%. Most of that is RL-CMA (82% on its share), and the walker's pick scored zero in 3 of 5 searches. With five searches, the gap to CMA-ES (+0.20, 95% interval +0.05 to +0.36) looks real; the gap to RLBO (+0.11, 0.00 to +0.23) doesn't yet.
 
 Splitting can backfire, though. On a mix of flat and smooth test problems, the warmed-up walker alone reached the target on 11 of 15 runs, and a two-method panel with half the budget each on 3. So the package also has `compare()`, which runs candidate methods on your own losses and suggests a panel, sometimes a single method.
 
-It's all in `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)). `method="panel"` splits the budget between rlbo, RL-CMA and CMA-ES (rlbo replaced the walker after these runs, so this exact panel is untested on the honeypot). `allocate="each"` gives every method the full budget; `allocate="race"` moves budget to whichever is doing best. You can also register your own optimizers or fine-tune the learned ones on problems shaped like yours.
+It's all in `pip install metawalker` ([PyPI](https://pypi.org/project/metawalker/)). `method="panel"` splits the budget between RLBO, RL-CMA, and CMA-ES (RLBO replaced the walker after these runs, so this exact panel is untested on the honeypot). `allocate="each"` gives every method the full budget; `allocate="race"` moves budget to whichever is doing best. You can also register your own optimizers or fine-tune the learned ones on problems shaped like yours.
 
-Does any of this help with ordinary hyperparameter tuning? Sometimes. The package has a drop-in replacement for scikit-learn's [`GridSearchCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html). On a 40-hyperparameter search in the demo, rlbo reached 0.93 test accuracy and the default method 0.91, against 0.88 for [`RandomizedSearchCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.RandomizedSearchCV.html). On small searches (2 to 7 hyperparameters), everything ties random search. The [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) runs both comparisons in a few minutes.
+Does any of this help with ordinary hyperparameter tuning? Sometimes. The package has a drop-in replacement for scikit-learn's [`GridSearchCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html). On a 40-hyperparameter search in the demo, RLBO reached 0.93 test accuracy and the default method 0.91, against 0.88 for [`RandomizedSearchCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.RandomizedSearchCV.html). On small searches (2 to 7 hyperparameters), everything ties random search. The [Colab demo](https://colab.research.google.com/drive/1nKxKFCsVaD7sqL6rE6NkNPjR3K4qFE5y?usp=sharing) runs both comparisons in a few minutes.
 
 ## Skills learned on cheap problems transferred to an expensive one
 
