@@ -147,15 +147,22 @@ family, at n = 5–500.
 
 ### Real honeypot, 169 parameters (`results/honeypot/`; `python results/honeypot/summarize.py`)
 
-Equal PPO compute: 200 PPO-costing evaluations per search, structurally invalid levels free. The score is the
-certified exploit rate: the best of the top candidates, re-measured on fresh PPO seeds. 5 search seeds per method.
+Equal PPO compute: 200 PPO-costing evaluations per search, structurally invalid levels free. "Certified" is the best
+of each search's top 3 levels, re-measured on 10 fresh PPO seeds. Keeping the best of 3 inflates it a little, so
+"fresh" retrains that chosen level once more on 10 brand-new seeds (`experiments/honeypot/recheck.py`,
+`results/honeypot/recheck_*`). 5 search seeds per method.
 
-| Method | Score |
-|---|---|
-| **rlbo** (3 policies, 15 searches) | **0.88** |
-| CMA-ES | 0.75–0.77 |
-| walker with jump / re-check + level cache | 0.69 |
-| Optuna GP | 0.55 |
+| Method | Certified | Fresh |
+|---|---|---|
+| panel: rlbo + CMA-ES + walker, each with the full budget (3x compute), best certified level kept | 0.96 | **0.88** |
+| **rlbo** (3 policies, 15 searches) | 0.88 | **0.79** |
+| CMA-ES (10 searches) | 0.76 | 0.70 |
+| walker with jump / re-check + level cache | 0.69 | 0.68 |
+| Optuna GP | 0.55 | 0.49 |
+
+With 5 to 15 searches per method, only rlbo vs GP and the panel vs CMA-ES are clear of the noise (95% bootstrap
+intervals of the fresh-seed gaps: rlbo − CMA-ES −0.08 to +0.27, rlbo − GP −0.02 to +0.61, panel − CMA-ES +0.01 to
++0.34).
 
 ### What the policies learned (`results/analysis/policy_report.md`)
 

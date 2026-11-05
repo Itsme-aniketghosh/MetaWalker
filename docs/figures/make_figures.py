@@ -52,14 +52,25 @@ def dot_rows(ax, rows, xlabel):
     ax.set_axisbelow(True)
 
 
+def fresh(prefix):
+    """Exploit rate of each search's chosen level on 10 brand-new PPO seeds (experiments/honeypot/recheck.py)."""
+    out = []
+    for f in sorted(HP.glob('recheck_*/recheck_*.json')):
+        d = json.load(open(f))
+        out += [d['exploit'] for k in d['key'] if k.replace(chr(92), '/').startswith(prefix)]  # keys from Windows paths
+    return out
+
+
 def fig_honeypot():
-    rows = [('rlbo (15 searches)', scores('round_J/*.json'), BLUE),
-            ('CMA-ES (10)', scores('round_F/manyh_cmaes_*.json') + scores('round_H/manyh_cmaes_*.json'), GRAY),
-            ('Walker (5)', scores('round_G/manyh_rl-hpx_walker-s0_*.json'), GRAY),
-            ('GP Bayesian opt. (5)', scores('round_F/manyh_optuna_gp_*.json'), GRAY)]
-    fig, ax = plt.subplots(figsize=(7.5, 3.6))
-    dot_rows(ax, rows, 'Exploit rate of the best level, re-measured on fresh PPO seeds')
-    ax.set_title('Same PPO budget, stronger honeypots')
+    rows = [('Panel, 3x budget (15)', fresh('panel:'), '#86b6ef'),  # rlbo + CMA-ES + walker, each the full budget
+            ('rlbo (15)', [v for p in ('s0', 's1', 's2') for v in fresh(f'rlbo:{p}|')], BLUE),
+            ('CMA-ES (10)', fresh('cmaes|'), GRAY),
+            ('Walker (5)', fresh('walker|'), GRAY),
+            ('GP Bayesian opt. (5)', fresh('gp|'), GRAY)]
+    assert [len(r[1]) for r in rows] == [15, 15, 10, 5, 5], [len(r[1]) for r in rows]
+    fig, ax = plt.subplots(figsize=(7.5, 4.2))
+    dot_rows(ax, rows, 'Exploit rate of the chosen level on 10 brand-new PPO seeds')
+    ax.set_title('Stronger honeypots, scored on brand-new PPO seeds')
     fig.tight_layout(); fig.savefig(OUT / 'honeypot_results.png', dpi=200); plt.close(fig)
 
 
